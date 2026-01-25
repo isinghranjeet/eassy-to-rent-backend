@@ -37,9 +37,30 @@ const PGListingSchema = new mongoose.Schema({
   images: [{
     type: String
   }],
+  gallery: [{ // Add gallery field
+    type: String
+  }],
+  googleMapLink: { // Add Google Maps link field
+    type: String,
+    default: ''
+  },
   amenities: [{
     type: String
   }],
+  roomTypes: [{ // Add room types field
+    type: String,
+    enum: ['Single', 'Double', 'Triple', 'Suite'],
+    default: ['Single', 'Double']
+  }],
+  distance: { // Add distance field
+    type: String,
+    default: ''
+  },
+  availability: { // Add availability field
+    type: String,
+    enum: ['available', 'sold-out', 'coming-soon'],
+    default: 'available'
+  },
   location: {
     type: {
       type: String,
@@ -82,6 +103,18 @@ const PGListingSchema = new mongoose.Schema({
     default: ''
   },
   ownerEmail: {
+    type: String,
+    default: ''
+  },
+  ownerId: { // Add owner ID field
+    type: String,
+    default: ''
+  },
+  contactEmail: { // Add separate contact email
+    type: String,
+    default: ''
+  },
+  contactPhone: { // Add separate contact phone
     type: String,
     default: ''
   }
