@@ -1,4 +1,4 @@
-// server.js - COMPLETE WORKING VERSION
+// server.js - MongoDB Atlas Version
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -27,40 +27,51 @@ app.use((req, res, next) => {
   next();
 });
 
-// ================ MONGODB CONNECTION ================
+// ================ MONGODB ATLAS CONNECTION ================
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/pgfinder';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://deep:deep123@cluster0.veuok.mongodb.net/pgfinder?retryWrites=true&w=majority&appName=Cluster0';
 
-console.log('🔌 Attempting MongoDB connection...');
-console.log(`MongoDB URI: ${MONGODB_URI}`);
+console.log('🔌 Attempting MongoDB Atlas connection...');
+console.log(`MongoDB URI: ${MONGODB_URI.replace(/deep:deep123@/, 'USER:PASSWORD@')}`); // Hide password in logs
 
-mongoose.connect(MONGODB_URI)
+mongoose.connect(MONGODB_URI, {
+  serverSelectionTimeoutMS: 5000, // Timeout after 5 seconds
+  socketTimeoutMS: 45000, // Close sockets after 45 seconds
+})
   .then(() => {
-    console.log('✅ MongoDB Connected Successfully!');
+    console.log('✅ MongoDB Atlas Connected Successfully!');
     console.log(`Database: ${mongoose.connection.name}`);
     console.log(`Host: ${mongoose.connection.host}`);
-    console.log(`Port: ${mongoose.connection.port}`);
     
     // List all collections
     mongoose.connection.db.listCollections().toArray()
       .then(collections => {
         console.log('\n📁 Available Collections:');
-        collections.forEach(col => {
-          console.log(`  - ${col.name}`);
-        });
+        if (collections.length === 0) {
+          console.log('  (No collections found)');
+        } else {
+          collections.forEach(col => {
+            console.log(`  - ${col.name}`);
+          });
+        }
       })
       .catch(err => {
         console.log('⚠️ Could not list collections:', err.message);
       });
   })
   .catch(err => {
-    console.error('❌ MongoDB Connection Error:', err.message);
-    console.log('⚠️ Running in fallback mode - MongoDB not connected');
+    console.error('❌ MongoDB Atlas Connection Error:', err.message);
+    console.log('⚠️ Make sure:');
+    console.log('  1. Your internet connection is working');
+    console.log('  2. MongoDB Atlas cluster is running');
+    console.log('  3. IP address is whitelisted in Atlas');
+    console.log('  4. Username and password are correct');
+    console.log('⚠️ Running in fallback mode - Using local data');
   });
 
 // MongoDB connection events
 mongoose.connection.on('connected', () => {
-  console.log('🔗 Mongoose connected to MongoDB');
+  console.log('🔗 Mongoose connected to MongoDB Atlas');
 });
 
 mongoose.connection.on('error', (err) => {
@@ -68,7 +79,7 @@ mongoose.connection.on('error', (err) => {
 });
 
 mongoose.connection.on('disconnected', () => {
-  console.log('⚠️ Mongoose disconnected from MongoDB');
+  console.log('⚠️ Mongoose disconnected from MongoDB Atlas');
 });
 
 // ================ MODELS ================
@@ -181,12 +192,14 @@ app.get('/', (req, res) => {
     version: '2.0.0',
     status: 'running 🚀',
     database: statusText[dbStatus] || 'Unknown',
+    atlas: 'MongoDB Atlas',
     timestamp: new Date().toISOString(),
     endpoints: {
       createPG: 'POST /api/pg',
       getPGs: 'GET /api/pg',
       health: 'GET /health',
-      test: 'GET /api/test'
+      test: 'GET /api/test',
+      getSingle: 'GET /api/pg/:id'
     }
   });
 });
@@ -200,6 +213,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     database: {
       connected: dbStatus,
+      atlas: true,
       status: dbStatus ? 'connected' : 'disconnected',
       readyState: mongoose.connection.readyState
     },
@@ -219,31 +233,19 @@ app.get('/api/test', (req, res) => {
     data: {
       serverTime: new Date().toISOString(),
       nodeVersion: process.version,
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || 'development',
+      database: mongoose.connection.readyState === 1 ? 'Connected to MongoDB Atlas' : 'Not connected'
     }
   });
 });
 
-// Debug endpoint
-app.post('/api/debug', (req, res) => {
-  console.log('🐛 Debug Request:', req.body);
-  
-  return res.json({
-    success: true,
-    message: 'Debug endpoint',
-    received: req.body,
-    timestamp: new Date().toISOString(),
-    databaseStatus: mongoose.connection.readyState
-  });
-});
-
-// Database testing endpoint
+// Test database connection
 app.get('/api/db-test', async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.json({
         success: false,
-        message: 'Database not connected',
+        message: 'Database not connected to MongoDB Atlas',
         readyState: mongoose.connection.readyState
       });
     }
@@ -253,13 +255,15 @@ app.get('/api/db-test', async (req, res) => {
     
     // Create a test document
     const testDoc = new PGListing({
-      name: 'Database Test PG',
+      name: 'Test PG - MongoDB Atlas',
       city: 'Test City',
       price: 9999,
       type: 'boys',
-      description: 'This is a test document to verify database connection',
-      amenities: ['Test', 'Database'],
-      published: false
+      description: 'Test document created at: ' + new Date().toISOString(),
+      amenities: ['Test', 'Database', 'Atlas'],
+      published: false,
+      ownerName: 'Test Owner',
+      ownerPhone: '1234567890'
     });
     
     const savedDoc = await testDoc.save();
@@ -267,26 +271,32 @@ app.get('/api/db-test', async (req, res) => {
     // Count again
     const newCount = await PGListing.countDocuments();
     
+    // Get all documents
+    const allDocs = await PGListing.find({}).limit(5);
+    
     // Delete test document
     await PGListing.findByIdAndDelete(savedDoc._id);
     
     return res.json({
       success: true,
-      message: 'Database test completed successfully',
+      message: 'MongoDB Atlas test completed successfully!',
       data: {
+        connection: 'MongoDB Atlas',
         initialCount: count,
         savedDocumentId: savedDoc._id,
         finalCount: newCount - 1,
+        recentDocuments: allDocs,
         testDocument: savedDoc
       }
     });
     
   } catch (error) {
-    console.error('❌ Database test error:', error);
+    console.error('❌ MongoDB Atlas test error:', error);
     return res.status(500).json({
       success: false,
       message: 'Database test failed',
-      error: error.message
+      error: error.message,
+      help: 'Check your MongoDB Atlas connection string and network'
     });
   }
 });
@@ -300,17 +310,52 @@ app.get('/api/pg', async (req, res) => {
     
     // Check MongoDB connection
     if (mongoose.connection.readyState !== 1) {
-      console.log('⚠️ MongoDB not connected, returning empty array');
+      console.log('⚠️ MongoDB Atlas not connected, returning mock data');
+      
+      // Return mock data when database is not connected
+      const mockData = [
+        {
+          _id: 'mock-1',
+          name: 'Premium Boys PG Near CU',
+          city: 'Chandigarh',
+          price: 8500,
+          type: 'boys',
+          description: 'Premium accommodation for boys near Chandigarh University',
+          images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800'],
+          amenities: ['WiFi', 'AC', 'Meals', 'Parking'],
+          rating: 4.5,
+          reviewCount: 42,
+          ownerName: 'Rajesh Kumar',
+          ownerPhone: '9876543210',
+          createdAt: new Date()
+        },
+        {
+          _id: 'mock-2',
+          name: 'Co-Ed PG for Students',
+          city: 'Chandigarh',
+          price: 7500,
+          type: 'co-ed',
+          description: 'Comfortable co-ed PG with all facilities',
+          images: ['https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=800'],
+          amenities: ['WiFi', 'Meals', 'Laundry', 'Study Room'],
+          rating: 4.2,
+          reviewCount: 28,
+          ownerName: 'Priya Sharma',
+          ownerPhone: '9876543211',
+          createdAt: new Date()
+        }
+      ];
+      
       return res.json({
         success: true,
-        message: 'MongoDB not connected',
-        count: 0,
-        data: []
+        message: 'Using mock data (MongoDB Atlas not connected)',
+        count: mockData.length,
+        data: mockData
       });
     }
     
-    // Build query
-    const query = {};
+    // Build query for database
+    const query = { published: true };
     
     if (req.query.type && req.query.type !== 'all') {
       query.type = req.query.type;
@@ -329,10 +374,10 @@ app.get('/api/pg', async (req, res) => {
       ];
     }
     
-    // Fetch from database
+    // Fetch from MongoDB Atlas
     const listings = await PGListing.find(query).sort({ createdAt: -1 });
     
-    console.log(`✅ Found ${listings.length} listings from database`);
+    console.log(`✅ Found ${listings.length} listings from MongoDB Atlas`);
     
     return res.json({
       success: true,
@@ -354,14 +399,14 @@ app.get('/api/pg', async (req, res) => {
 app.post('/api/pg', async (req, res) => {
   try {
     console.log('➕ POST /api/pg');
-    console.log('Request body:', req.body);
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     // Check MongoDB connection
     if (mongoose.connection.readyState !== 1) {
-      console.log('❌ MongoDB not connected');
+      console.log('❌ MongoDB Atlas not connected');
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
+        message: 'MongoDB Atlas not connected',
         readyState: mongoose.connection.readyState
       });
     }
@@ -385,7 +430,7 @@ app.post('/api/pg', async (req, res) => {
     const listingData = {
       name: req.body.name,
       description: req.body.description || '',
-      city: req.body.city || 'Unknown',
+      city: req.body.city || 'Chandigarh',
       locality: req.body.locality || '',
       address: req.body.address || '',
       price: Number(req.body.price),
@@ -396,7 +441,7 @@ app.post('/api/pg', async (req, res) => {
         type: 'Point',
         coordinates: [0, 0]
       },
-      published: req.body.published || false,
+      published: req.body.published !== undefined ? req.body.published : true,
       verified: req.body.verified || false,
       featured: req.body.featured || false,
       rating: req.body.rating || 0,
@@ -406,22 +451,20 @@ app.post('/api/pg', async (req, res) => {
       ownerEmail: req.body.ownerEmail || ''
     };
     
-    // Create and save listing
+    // Create and save listing to MongoDB Atlas
     const newListing = new PGListing(listingData);
     const savedListing = await newListing.save();
     
-    console.log('✅ Listing saved to MongoDB with ID:', savedListing._id);
-    console.log('📄 Saved data:', savedListing);
+    console.log('✅ Listing saved to MongoDB Atlas with ID:', savedListing._id);
     
     return res.status(201).json({
       success: true,
-      message: 'PG listing created successfully',
+      message: 'PG listing created successfully in MongoDB Atlas',
       data: savedListing
     });
     
   } catch (error) {
     console.error('❌ Error creating listing:', error);
-    console.error('Error stack:', error.stack);
     
     return res.status(500).json({ 
       success: false, 
@@ -437,9 +480,39 @@ app.get('/api/pg/:id', async (req, res) => {
     console.log('🔍 GET /api/pg/:id', req.params.id);
     
     if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({
-        success: false,
-        message: 'Database not connected'
+      console.log('⚠️ MongoDB Atlas not connected, returning mock data');
+      
+      // Return mock data when database is not connected
+      const mockData = {
+        _id: req.params.id,
+        name: 'Premium Boys PG Near CU',
+        description: 'Premium accommodation for boys near Chandigarh University. Features spacious rooms, high-speed WiFi, nutritious meals, and 24/7 security. Perfect for students looking for a comfortable and safe living environment.',
+        city: 'Chandigarh',
+        address: 'Gate 1, Chandigarh University Road, Gharuan, Punjab',
+        price: 8500,
+        type: 'boys',
+        images: [
+          'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=800&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800&auto=format&fit=crop&q=80'
+        ],
+        amenities: ['WiFi', 'AC', 'Meals', 'Parking', 'CCTV', 'Power Backup', 'Laundry', 'Hot Water', 'Study Room'],
+        verified: true,
+        featured: true,
+        rating: 4.5,
+        reviewCount: 128,
+        ownerName: 'Rajesh Kumar',
+        ownerPhone: '9315058665',
+        ownerEmail: 'rajesh.cupg@gmail.com',
+        createdAt: new Date().toISOString(),
+        distance: '500m from CU Gate 1',
+        locality: 'Gate 1 Area'
+      };
+      
+      return res.json({
+        success: true,
+        message: 'Using mock data (MongoDB Atlas not connected)',
+        data: mockData
       });
     }
     
@@ -448,9 +521,11 @@ app.get('/api/pg/:id', async (req, res) => {
     if (!listing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found'
+        message: 'Listing not found in MongoDB Atlas'
       });
     }
+    
+    console.log('✅ Found listing in MongoDB Atlas:', listing._id);
     
     return res.json({
       success: true,
@@ -467,84 +542,87 @@ app.get('/api/pg/:id', async (req, res) => {
   }
 });
 
-// UPDATE listing by ID
-app.put('/api/pg/:id', async (req, res) => {
+// Add some sample data endpoint
+app.post('/api/pg/sample-data', async (req, res) => {
   try {
-    console.log('✏️ PUT /api/pg/:id', req.params.id);
-    console.log('Update data:', req.body);
-    
     if (mongoose.connection.readyState !== 1) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected'
+        message: 'MongoDB Atlas not connected'
       });
     }
     
-    const updatedListing = await PGListing.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const sampleListings = [
+      {
+        name: 'Royal Boys PG',
+        description: 'Luxurious boys PG with modern amenities near Chandigarh University',
+        city: 'Chandigarh',
+        address: 'Gate 2, CU Road',
+        price: 9000,
+        type: 'boys',
+        images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800'],
+        amenities: ['WiFi', 'AC', 'Meals', 'Parking', 'Gym', 'Study Room'],
+        published: true,
+        verified: true,
+        rating: 4.7,
+        reviewCount: 56,
+        ownerName: 'Amit Verma',
+        ownerPhone: '9876543212'
+      },
+      {
+        name: 'Sunshine Girls PG',
+        description: 'Safe and secure girls PG with 24/7 security and CCTV',
+        city: 'Chandigarh',
+        address: 'Library Road, CU',
+        price: 9500,
+        type: 'girls',
+        images: ['https://images.unsplash.com/photo-1560185127-6ed189bf02f4?w=800'],
+        amenities: ['WiFi', 'AC', 'Meals', 'CCTV', '24/7 Security', 'Hot Water'],
+        published: true,
+        verified: true,
+        rating: 4.8,
+        reviewCount: 89,
+        ownerName: 'Sunita Devi',
+        ownerPhone: '9876543213'
+      },
+      {
+        name: 'Student Hub Co-Ed PG',
+        description: 'Co-ed PG with study rooms and high-speed internet',
+        city: 'Chandigarh',
+        address: 'Sports Complex Road',
+        price: 8000,
+        type: 'co-ed',
+        images: ['https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=800'],
+        amenities: ['WiFi', 'Study Room', 'Library', 'Common Room', 'Laundry'],
+        published: true,
+        verified: true,
+        rating: 4.3,
+        reviewCount: 34,
+        ownerName: 'Rohit Sharma',
+        ownerPhone: '9876543214'
+      }
+    ];
     
-    if (!updatedListing) {
-      return res.status(404).json({
-        success: false,
-        message: 'Listing not found'
-      });
+    const savedListings = [];
+    
+    for (const listing of sampleListings) {
+      const newListing = new PGListing(listing);
+      const saved = await newListing.save();
+      savedListings.push(saved);
     }
-    
-    console.log('✅ Listing updated:', updatedListing._id);
     
     return res.json({
       success: true,
-      message: 'Listing updated successfully',
-      data: updatedListing
+      message: 'Sample data added to MongoDB Atlas',
+      count: savedListings.length,
+      data: savedListings
     });
     
   } catch (error) {
-    console.error('❌ Error updating listing:', error);
+    console.error('❌ Error adding sample data:', error);
     return res.status(500).json({ 
       success: false, 
-      message: 'Server error',
-      error: error.message
-    });
-  }
-});
-
-// DELETE listing by ID
-app.delete('/api/pg/:id', async (req, res) => {
-  try {
-    console.log('🗑️ DELETE /api/pg/:id', req.params.id);
-    
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({
-        success: false,
-        message: 'Database not connected'
-      });
-    }
-    
-    const deletedListing = await PGListing.findByIdAndDelete(req.params.id);
-    
-    if (!deletedListing) {
-      return res.status(404).json({
-        success: false,
-        message: 'Listing not found'
-      });
-    }
-    
-    console.log('✅ Listing deleted:', req.params.id);
-    
-    return res.json({
-      success: true,
-      message: 'Listing deleted successfully',
-      data: { id: req.params.id }
-    });
-    
-  } catch (error) {
-    console.error('❌ Error deleting listing:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Server error',
+      message: 'Failed to add sample data',
       error: error.message
     });
   }
@@ -555,7 +633,6 @@ app.delete('/api/pg/:id', async (req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('🚨 Global Error Handler:', err.message);
-  console.error(err.stack);
   
   return res.status(err.status || 500).json({
     success: false,
@@ -577,13 +654,11 @@ app.all('*', (req, res) => {
       'GET  /',
       'GET  /health',
       'GET  /api/test',
-      'POST /api/debug',
       'GET  /api/db-test',
       'GET  /api/pg',
       'POST /api/pg',
-      'GET  /api/pg/:id',
-      'PUT  /api/pg/:id',
-      'DELETE /api/pg/:id'
+      'POST /api/pg/sample-data',
+      'GET  /api/pg/:id'
     ]
   });
 });
@@ -595,29 +670,24 @@ const PORT = process.env.PORT || 5000;
 const startServer = () => {
   const server = app.listen(PORT, () => {
     console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📊 MongoDB Status: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
+    console.log(`📊 MongoDB Atlas Status: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
     
     console.log('\n📋 Available Endpoints:');
     console.log(`  🔗 API Base: http://localhost:${PORT}/api`);
     console.log(`  🏠 Home:      http://localhost:${PORT}/`);
     console.log(`  ❤️  Health:    http://localhost:${PORT}/health`);
     console.log(`  🧪 Test:      http://localhost:${PORT}/api/test`);
-    console.log(`  🐛 Debug:     http://localhost:${PORT}/api/debug`);
     console.log(`  🗄️  DB Test:   http://localhost:${PORT}/api/db-test`);
     console.log(`  🏢 PG Listings:`);
     console.log(`    GET    http://localhost:${PORT}/api/pg`);
     console.log(`    POST   http://localhost:${PORT}/api/pg`);
+    console.log(`    POST   http://localhost:${PORT}/api/pg/sample-data`);
     console.log(`    GET    http://localhost:${PORT}/api/pg/:id`);
-    console.log(`    PUT    http://localhost:${PORT}/api/pg/:id`);
-    console.log(`    DELETE http://localhost:${PORT}/api/pg/:id`);
     
-    console.log('\n🎯 Testing Commands:');
-    console.log('  # Create PG listing:');
-    console.log(`    curl -X POST http://localhost:${PORT}/api/pg \\`);
-    console.log(`      -H "Content-Type: application/json" \\`);
-    console.log(`      -d \'{"name":"Test PG","city":"Delhi","price":5000,"type":"boys"}\'`);
-    console.log('\n  # Get all listings:');
-    console.log(`    curl http://localhost:${PORT}/api/pg`);
+    console.log('\n💡 Pro Tips:');
+    console.log('  1. First visit: http://localhost:5000/api/db-test');
+    console.log('  2. Add sample data: http://localhost:5000/api/pg/sample-data (POST)');
+    console.log('  3. View all PGs: http://localhost:5000/api/pg');
     
     console.log('\n📌 Press Ctrl+C to stop the server\n');
   });
@@ -637,470 +707,10 @@ process.on('SIGINT', () => {
   });
   
   mongoose.connection.close(false, () => {
-    console.log('✅ MongoDB connection closed');
+    console.log('✅ MongoDB Atlas connection closed');
     process.exit(0);
   });
 });
 
 // Export app for testing
 module.exports = app;
-
-
-
-
-
-
-
-
-// // src/server.js - WORKING VERSION
-// const express = require('express');
-// const mongoose = require('mongoose');
-// const cors = require('cors');
-
-// const app = express();
-
-// // Middleware
-// app.use(cors({
-//   origin: ['http://localhost:3000', 'http://localhost:5173'],
-//   credentials: true
-// }));
-// app.use(express.json());
-
-// // Mock data for fallback
-// const mockPGs = [
-//   {
-//     _id: '1',
-//     name: 'Shanti PG for Boys',
-//     description: 'Peaceful accommodation near University',
-//     city: 'Delhi',
-//     locality: 'North Campus',
-//     price: 8000,
-//     type: 'boys',
-//     featured: true,
-//     images: [],
-//     amenities: ['WiFi', 'AC', 'Food', 'Laundry'],
-//     rating: 4.5,
-//     reviewCount: 12
-//   },
-//   {
-//     _id: '2',
-//     name: 'Girls Safe PG',
-//     description: 'Secure and comfortable girls PG',
-//     city: 'Delhi',
-//     locality: 'South Campus',
-//     price: 9000,
-//     type: 'girls',
-//     featured: true,
-//     images: [],
-//     amenities: ['WiFi', 'Food', 'Security', 'Hot Water'],
-//     rating: 4.2,
-//     reviewCount: 8
-//   },
-//   {
-//     _id: '3',
-//     name: 'Co-ed Modern PG',
-//     description: 'Modern PG with all facilities',
-//     city: 'Delhi',
-//     locality: 'Dwarka',
-//     price: 10000,
-//     type: 'co-ed',
-//     featured: true,
-//     images: [],
-//     amenities: ['WiFi', 'AC', 'Gym', 'Food', 'Laundry'],
-//     rating: 4.8,
-//     reviewCount: 15
-//   }
-// ];
-
-// // MongoDB Connection
-// const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/pgfinder';
-
-// console.log('🔌 Connecting to MongoDB...');
-// console.log(`MongoDB URI: ${MONGODB_URI}`);
-
-// mongoose.connect(MONGODB_URI)
-//   .then(() => {
-//     console.log('✅ MongoDB Connected Successfully!');
-//   })
-//   .catch(err => {
-//     console.log('⚠️ MongoDB Connection Failed:', err.message);
-//     console.log('📝 Using mock data for now...');
-//   });
-
-// // PG Schema
-// const pgListingSchema = new mongoose.Schema({
-//   name: {
-//     type: String,
-//     required: true,
-//     trim: true
-//   },
-//   description: {
-//     type: String,
-//     default: ''
-//   },
-//   city: {
-//     type: String,
-//     default: 'Delhi'
-//   },
-//   locality: {
-//     type: String,
-//     default: ''
-//   },
-//   price: {
-//     type: Number,
-//     required: true,
-//     min: 0
-//   },
-//   type: {
-//     type: String,
-//     enum: ['boys', 'girls', 'co-ed', 'family'],
-//     default: 'boys'
-//   },
-//   featured: {
-//     type: Boolean,
-//     default: false
-//   },
-//   images: [String],
-//   amenities: [String],
-//   rating: {
-//     type: Number,
-//     default: 0,
-//     min: 0,
-//     max: 5
-//   },
-//   reviewCount: {
-//     type: Number,
-//     default: 0
-//   }
-// }, { timestamps: true });
-
-// const PGListing = mongoose.models.PGListing || mongoose.model('PGListing', pgListingSchema);
-
-// // Log requests
-// app.use((req, res, next) => {
-//   console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
-//   next();
-// });
-
-// // ============ ROUTES ============
-
-// // Home route
-// app.get('/', (req, res) => {
-//   res.json({ 
-//     message: '🏠 PG Finder Backend API',
-//     version: '1.0.0',
-//     status: 'running 🚀',
-//     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-//     timestamp: new Date().toISOString(),
-//     endpoints: {
-//       getPGs: 'GET /api/pg',
-//       getFeaturedPGs: 'GET /api/pg?featured=true',
-//       createPG: 'POST /api/pg',
-//       health: 'GET /health'
-//     }
-//   });
-// });
-
-// // Health check
-// app.get('/health', (req, res) => {
-//   res.json({
-//     status: 'healthy',
-//     timestamp: new Date().toISOString(),
-//     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-//   });
-// });
-
-// // Test endpoint
-// app.get('/api/test', (req, res) => {
-//   res.json({
-//     success: true,
-//     message: '✅ API is working!',
-//     data: {
-//       serverTime: new Date().toISOString(),
-//       nodeVersion: process.version
-//     }
-//   });
-// });
-
-// // GET all PG listings
-// app.get('/api/pg', async (req, res) => {
-//   try {
-//     console.log('📋 GET /api/pg', req.query);
-    
-//     // Check if MongoDB is connected
-//     if (mongoose.connection.readyState !== 1) {
-//       console.log('⚠️ MongoDB not connected, using mock data');
-      
-//       let data = [...mockPGs];
-      
-//       // Apply filters to mock data
-//       if (req.query.featured === 'true') {
-//         data = data.filter(pg => pg.featured === true);
-//         console.log(`Filtered ${data.length} featured PGs from mock data`);
-//       }
-      
-//       if (req.query.type && req.query.type !== 'all') {
-//         data = data.filter(pg => pg.type === req.query.type);
-//       }
-      
-//       if (req.query.city) {
-//         data = data.filter(pg => 
-//           pg.city.toLowerCase().includes(req.query.city.toLowerCase())
-//         );
-//       }
-      
-//       return res.json({
-//         success: true,
-//         message: 'Using mock data',
-//         count: data.length,
-//         data: data
-//       });
-//     }
-    
-//     // Build query for MongoDB
-//     const query = {};
-    
-//     if (req.query.featured === 'true') {
-//       query.featured = true;
-//       console.log('🔍 Filtering for featured PGs');
-//     }
-    
-//     if (req.query.type && req.query.type !== 'all') {
-//       query.type = req.query.type;
-//     }
-    
-//     if (req.query.city) {
-//       query.city = { $regex: req.query.city, $options: 'i' };
-//     }
-    
-//     if (req.query.search) {
-//       query.$or = [
-//         { name: { $regex: req.query.search, $options: 'i' } },
-//         { description: { $regex: req.query.search, $options: 'i' } },
-//         { locality: { $regex: req.query.search, $options: 'i' } }
-//       ];
-//     }
-    
-//     console.log('Database query:', query);
-    
-//     // Fetch from MongoDB
-//     let listings = await PGListing.find(query).sort({ createdAt: -1 });
-    
-//     console.log(`✅ Found ${listings.length} listings from database`);
-    
-//     // If no featured PGs found but featured filter is on, use mock data
-//     if (req.query.featured === 'true' && listings.length === 0) {
-//       console.log('No featured PGs in DB, using mock data');
-//       const featuredMock = mockPGs.filter(pg => pg.featured === true);
-//       return res.json({
-//         success: true,
-//         message: 'Using mock data - no featured PGs in database',
-//         count: featuredMock.length,
-//         data: featuredMock
-//       });
-//     }
-    
-//     return res.json({
-//       success: true,
-//       count: listings.length,
-//       data: listings
-//     });
-    
-//   } catch (error) {
-//     console.error('❌ Error fetching listings:', error);
-    
-//     // Fallback to mock data on any error
-//     let data = [...mockPGs];
-    
-//     if (req.query.featured === 'true') {
-//       data = data.filter(pg => pg.featured === true);
-//     }
-    
-//     return res.json({
-//       success: true,
-//       message: 'Using fallback data due to error',
-//       count: data.length,
-//       data: data
-//     });
-//   }
-// });
-
-// // CREATE PG listing
-// app.post('/api/pg', async (req, res) => {
-//   try {
-//     console.log('➕ POST /api/pg');
-//     console.log('Request body:', req.body);
-    
-//     if (mongoose.connection.readyState !== 1) {
-//       return res.status(500).json({
-//         success: false,
-//         message: 'Database not connected'
-//       });
-//     }
-    
-//     // Validate required fields
-//     if (!req.body.name || !req.body.price) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Name and price are required'
-//       });
-//     }
-    
-//     const newPG = new PGListing({
-//       name: req.body.name,
-//       description: req.body.description || '',
-//       city: req.body.city || 'Delhi',
-//       locality: req.body.locality || '',
-//       price: Number(req.body.price),
-//       type: req.body.type || 'boys',
-//       featured: req.body.featured || false,
-//       images: req.body.images || [],
-//       amenities: req.body.amenities || [],
-//       rating: req.body.rating || 0,
-//       reviewCount: req.body.reviewCount || 0
-//     });
-    
-//     const savedPG = await newPG.save();
-    
-//     console.log('✅ PG saved to database:', savedPG._id);
-    
-//     res.status(201).json({
-//       success: true,
-//       message: 'PG listing created successfully',
-//       data: savedPG
-//     });
-    
-//   } catch (error) {
-//     console.error('❌ Error creating PG:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.message
-//     });
-//   }
-// });
-
-// // GET single PG by ID
-// app.get('/api/pg/:id', async (req, res) => {
-//   try {
-//     console.log('🔍 GET /api/pg/:id', req.params.id);
-    
-//     if (mongoose.connection.readyState !== 1) {
-//       // Find in mock data
-//       const mockPG = mockPGs.find(pg => pg._id === req.params.id);
-//       if (mockPG) {
-//         return res.json({
-//           success: true,
-//           data: mockPG
-//         });
-//       }
-//       return res.status(404).json({
-//         success: false,
-//         message: 'PG not found'
-//       });
-//     }
-    
-//     const pg = await PGListing.findById(req.params.id);
-    
-//     if (!pg) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'PG not found'
-//       });
-//     }
-    
-//     res.json({
-//       success: true,
-//       data: pg
-//     });
-    
-//   } catch (error) {
-//     console.error('Error fetching PG:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.message
-//     });
-//   }
-// });
-
-// // Database test endpoint
-// app.get('/api/db-test', async (req, res) => {
-//   try {
-//     if (mongoose.connection.readyState !== 1) {
-//       return res.json({
-//         success: false,
-//         message: 'Database not connected',
-//         readyState: mongoose.connection.readyState
-//       });
-//     }
-    
-//     // Create a test PG
-//     const testPG = new PGListing({
-//       name: 'Test PG for Database',
-//       description: 'This is a test PG to verify database connection',
-//       city: 'Test City',
-//       price: 5000,
-//       type: 'boys',
-//       featured: true
-//     });
-    
-//     const savedPG = await testPG.save();
-    
-//     // Count all PGs
-//     const count = await PGListing.countDocuments();
-    
-//     // Delete test PG
-//     await PGListing.findByIdAndDelete(savedPG._id);
-    
-//     res.json({
-//       success: true,
-//       message: 'Database test successful',
-//       data: {
-//         testId: savedPG._id,
-//         totalPGs: count - 1
-//       }
-//     });
-    
-//   } catch (error) {
-//     console.error('Database test error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.message
-//     });
-//   }
-// });
-
-// // 404 handler
-// app.use('*', (req, res) => {
-//   res.status(404).json({
-//     success: false,
-//     message: 'Endpoint not found',
-//     path: req.originalUrl
-//   });
-// });
-
-// // Error handler
-// app.use((err, req, res, next) => {
-//   console.error('🚨 Server error:', err);
-//   res.status(500).json({
-//     success: false,
-//     message: 'Internal server error',
-//     error: process.env.NODE_ENV === 'development' ? err.message : undefined
-//   });
-// });
-
-// // Start server
-// const PORT = process.env.PORT || 5000;
-// app.listen(PORT, () => {
-//   console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-//   console.log(`📊 MongoDB Status: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
-//   console.log('\n📋 Available Endpoints:');
-//   console.log(`  🔗 Home: http://localhost:${PORT}/`);
-//   console.log(`  ❤️  Health: http://localhost:${PORT}/health`);
-//   console.log(`  🧪 Test: http://localhost:${PORT}/api/test`);
-//   console.log(`  🏢 All PGs: http://localhost:${PORT}/api/pg`);
-//   console.log(`  ⭐ Featured PGs: http://localhost:${PORT}/api/pg?featured=true`);
-//   console.log(`  🗄️  DB Test: http://localhost:${PORT}/api/db-test`);
-//   console.log('\n🎯 Quick Test:');
-//   console.log(`  curl http://localhost:${PORT}/api/pg?featured=true`);
-//   console.log('\n📌 Press Ctrl+C to stop\n');
-// });
