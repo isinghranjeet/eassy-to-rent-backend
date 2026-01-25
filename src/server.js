@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 
 // ================ MONGODB CONNECTION ================
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/pgfinder';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/pgfinder';
 
 console.log('🔌 Attempting MongoDB connection...');
 console.log(`MongoDB URI: ${MONGODB_URI}`);
