@@ -675,7 +675,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
         rating: 4.7,
         reviewCount: 56,
         ownerName: 'Amit Verma',
-        ownerPhone: '9876543212'
+        ownerPhone: '9315058665'
       },
       {
         name: 'Sunshine Girls PG',
@@ -692,7 +692,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
         rating: 4.8,
         reviewCount: 89,
         ownerName: 'Sunita Devi',
-        ownerPhone: '9876543213'
+        ownerPhone: '9315058665'
       },
       {
         name: 'Student Hub Co-Ed PG',
@@ -709,7 +709,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
         rating: 4.3,
         reviewCount: 34,
         ownerName: 'Rohit Sharma',
-        ownerPhone: '9876543214'
+        ownerPhone: '9315058665'
       }
     ];
     
