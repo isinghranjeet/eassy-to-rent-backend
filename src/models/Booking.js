@@ -1,75 +1,22 @@
-const mongoose = require('mongoose');
+const protect = async (req, res, next) => {
+  let token;
 
-const bookingSchema = new mongoose.Schema({
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  pgListing: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'PGListing',
-    required: true
-  },
-  roomType: {
-    type: String,
-    required: true,
-    enum: ['single', 'double', 'triple', 'quad', 'dormitory']
-  },
-  startDate: {
-    type: Date,
-    required: true
-  },
-  duration: {
-    type: Number, // in months
-    required: true,
-    min: 1,
-    max: 12
-  },
-  totalAmount: {
-    type: Number,
-    required: true
-  },
-  deposit: {
-    type: Number,
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'confirmed', 'cancelled', 'completed'],
-    default: 'pending'
-  },
-  payment: {
-    method: {
-      type: String,
-      enum: ['cash', 'online', 'bank_transfer'],
-      default: 'online'
-    },
-    transactionId: String,
-    status: {
-      type: String,
-      enum: ['pending', 'completed', 'failed', 'refunded'],
-      default: 'pending'
-    },
-    amount: Number,
-    date: Date
-  },
-  specialRequests: {
-    type: String
-  },
-  contactInfo: {
-    name: String,
-    phone: String,
-    email: String,
-    emergencyContact: String
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    try {
+      token = req.headers.authorization.split(' ')[1]; // Bearer <token>
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      req.user = await User.findById(decoded.id).select('-password');
+      next();
+    } catch (error) {
+      res.status(401).json({ message: 'Not authorized, token failed' });
+    }
   }
-}, {
-  timestamps: true
-});
 
-// Indexes
-bookingSchema.index({ user: 1, createdAt: -1 });
-bookingSchema.index({ pgListing: 1, status: 1 });
-bookingSchema.index({ status: 1, createdAt: -1 });
-
-module.exports = mongoose.model('Booking', bookingSchema);
+  if (!token) {
+    res.status(401).json({ message: 'Not authorized, no token' });
+  }
+};

@@ -1,20 +1,28 @@
-// models/PGListing.js
 const mongoose = require('mongoose');
 
 const PGListingSchema = new mongoose.Schema({
+  // Basic Information
   name: {
     type: String,
     required: [true, 'PG name is required'],
+    trim: true
+  },
+  slug: {
+    type: String,
+    unique: true,
+    lowercase: true,
     trim: true
   },
   description: {
     type: String,
     default: ''
   },
+  
+  // Location Details
   city: {
     type: String,
-    required: [true, 'City is required'],
-    trim: true
+    required: true,
+    default: 'Chandigarh'
   },
   locality: {
     type: String,
@@ -22,44 +30,15 @@ const PGListingSchema = new mongoose.Schema({
   },
   address: {
     type: String,
-    default: ''
+    required: true
   },
-  price: {
-    type: Number,
-    required: [true, 'Price is required'],
-    min: 0
-  },
-  type: {
-    type: String,
-    enum: ['boys', 'girls', 'co-ed', 'family'],
-    default: 'boys'
-  },
-  images: [{
-    type: String
-  }],
-  gallery: [{ // Add gallery field
-    type: String
-  }],
-  googleMapLink: { // Add Google Maps link field
+  distance: {
     type: String,
     default: ''
   },
-  amenities: [{
-    type: String
-  }],
-  roomTypes: [{ // Add room types field
-    type: String,
-    enum: ['Single', 'Double', 'Triple', 'Suite'],
-    default: ['Single', 'Double']
-  }],
-  distance: { // Add distance field
+  googleMapLink: {
     type: String,
     default: ''
-  },
-  availability: { // Add availability field
-    type: String,
-    enum: ['available', 'sold-out', 'coming-soon'],
-    default: 'available'
   },
   location: {
     type: {
@@ -72,9 +51,43 @@ const PGListingSchema = new mongoose.Schema({
       default: [0, 0]
     }
   },
+  
+  // Pricing
+  price: {
+    type: Number,
+    required: [true, 'Price is required'],
+    min: [0, 'Price cannot be negative']
+  },
+  type: {
+    type: String,
+    enum: ['boys', 'girls', 'co-ed', 'family'],
+    default: 'boys'
+  },
+  
+  // Media
+  images: [{
+    type: String
+  }],
+  gallery: [{
+    type: String
+  }],
+  
+  // Features
+  amenities: [{
+    type: String
+  }],
+  roomTypes: [{
+    type: String
+  }],
+  availability: {
+    type: String,
+    default: 'available'
+  },
+  
+  // Status Flags
   published: {
     type: Boolean,
-    default: false
+    default: true
   },
   verified: {
     type: Boolean,
@@ -84,6 +97,8 @@ const PGListingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  
+  // Ratings & Reviews
   rating: {
     type: Number,
     default: 0,
@@ -94,6 +109,8 @@ const PGListingSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  
+  // Owner Information
   ownerName: {
     type: String,
     default: ''
@@ -106,32 +123,58 @@ const PGListingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  ownerId: { // Add owner ID field
+  ownerId: {
     type: String,
     default: ''
   },
-  contactEmail: { // Add separate contact email
+  
+  // Contact Information
+  contactEmail: {
     type: String,
     default: ''
   },
-  contactPhone: { // Add separate contact phone
+  contactPhone: {
     type: String,
     default: ''
+  },
+  
+  // Timestamps
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
-// Create index for location for geospatial queries
+// Create slug before saving
+PGListingSchema.pre('save', function(next) {
+  if (this.isModified('name') || !this.slug) {
+    this.slug = this.name
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/-+/g, '-');
+  }
+  next();
+});
+
+// Index for faster queries
+PGListingSchema.index({ name: 1 });
+PGListingSchema.index({ slug: 1 });
+PGListingSchema.index({ city: 1 });
+PGListingSchema.index({ type: 1 });
+PGListingSchema.index({ price: 1 });
+PGListingSchema.index({ published: 1 });
 PGListingSchema.index({ location: '2dsphere' });
+PGListingSchema.index({ name: 'text', description: 'text', address: 'text', city: 'text' });
 
-// Create index for text search
-PGListingSchema.index({ 
-  name: 'text', 
-  description: 'text', 
-  city: 'text', 
-  address: 'text' 
-});
+const PGListing = mongoose.model('PGListing', PGListingSchema);
 
-// Export the model
-module.exports = mongoose.models.PGListing || mongoose.model('PGListing', PGListingSchema);
+module.exports = PGListing;
