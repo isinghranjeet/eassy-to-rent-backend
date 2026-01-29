@@ -1,8 +1,3 @@
-
-
-
-
-
 // server-fixed.js - Complete fixed version
 require('dotenv').config();
 const express = require('express');
@@ -53,32 +48,73 @@ app.use((req, res, next) => {
   console.log('Origin:', req.headers.origin || 'No Origin Header');
   next();
 });
+
 // ================ MONGODB ATLAS CONNECTION ================
-const MONGODB_URI = process.env.MONGO_URI || 'mongodb+srv://rsinghranjeet74282:Ranjeet123@cluster0.ibrwq.mongodb.net/pgfinder?retryWrites=true&w=majority&appName=Cluster0';
+const MONGODB_URI = process.env.MONGO_URI;
 
 console.log('🔌 Attempting MongoDB Atlas connection...');
 
-mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 10000,
-  socketTimeoutMS: 45000,
-})
-  .then(() => {
-    console.log('✅ MongoDB Atlas Connected Successfully!');
-    console.log(`Database: ${mongoose.connection.name}`);
-  })
-  .catch(err => {
-    console.error('❌ MongoDB Atlas Connection Error:', err.message);
-    console.log('⚠️ Running in fallback mode');
-  });
-  
+// MongoDB Connection Event Handlers
+mongoose.connection.on('connecting', () => {
+  console.log('🔄 MongoDB: Connecting...');
+});
+
+mongoose.connection.on('connected', () => {
+  console.log('✅ MongoDB Atlas Connected Successfully!');
+  console.log(`Database: ${mongoose.connection.name}`);
+  console.log(`Host: ${mongoose.connection.host}`);
+  console.log(`Ready State: ${mongoose.connection.readyState} (1 = CONNECTED)`);
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('❌ MongoDB Connection Error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('⚠️ MongoDB Connection Lost');
+});
+
+// Connect with retry logic
+async function connectMongoDB() {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      family: 4 // Use IPv4, skip trying IPv6
+    });
+    console.log('🎯 MongoDB Connection Established!');
+  } catch (error) {
+    console.error('❌ MongoDB Connection Failed:', error.message);
+    console.log('💡 Troubleshooting Tips:');
+    console.log('1. Check if your IP is whitelisted in MongoDB Atlas');
+    console.log('2. Verify your connection string in .env file');
+    console.log('3. Check your internet connection');
+    console.log('4. Verify database user credentials in MongoDB Atlas');
+  }
+}
+
+// Call the connection function
+connectMongoDB();
+
 // ================ ROUTES ================
 app.get('/', (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected';
+  const dbStatus = mongoose.connection.readyState;
+  const statusMap = {
+    0: 'Disconnected',
+    1: 'Connected',
+    2: 'Connecting',
+    3: 'Disconnecting'
+  };
   
   res.json({
     message: '🏠 PG Finder Backend API v2.1.0',
     status: 'running 🚀',
-    database: dbStatus,
+    database: {
+      status: statusMap[dbStatus] || 'Unknown',
+      readyState: dbStatus,
+      name: mongoose.connection.name || 'Not connected'
+    },
     timestamp: new Date().toISOString(),
     endpoints: {
       createPG: 'POST /api/pg',
@@ -92,7 +128,9 @@ app.get('/', (req, res) => {
       health: 'GET /health',
       test: 'GET /api/test',
       stats: 'GET /api/stats',
-      dbTest: 'GET /api/db-test'
+      dbTest: 'GET /api/db-test',
+      addSampleData: 'POST /api/pg/sample-data',
+      search: 'GET /api/search'
     }
   });
 });
@@ -102,8 +140,14 @@ app.get('/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1;
   return res.json({
     status: 'healthy',
-    database: { connected: dbStatus },
-    cors: { origin: req.headers.origin || 'No Origin' }
+    serverTime: new Date().toISOString(),
+    database: { 
+      connected: dbStatus,
+      readyState: mongoose.connection.readyState,
+      name: mongoose.connection.name
+    },
+    cors: { origin: req.headers.origin || 'No Origin' },
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -112,7 +156,11 @@ app.get('/api/test', (req, res) => {
   return res.json({
     success: true,
     message: '✅ API is working!',
-    data: { serverTime: new Date().toISOString() }
+    data: { 
+      serverTime: new Date().toISOString(),
+      nodeEnv: process.env.NODE_ENV,
+      port: process.env.PORT
+    }
   });
 });
 
@@ -132,7 +180,9 @@ app.get('/api/db-test', async (req, res) => {
         samplePG = {
           id: pgs[0]._id,
           name: pgs[0].name,
-          price: pgs[0].price
+          price: pgs[0].price,
+          city: pgs[0].city,
+          type: pgs[0].type
         };
       }
     }
@@ -143,7 +193,9 @@ app.get('/api/db-test', async (req, res) => {
         status: dbStatus === 1 ? 'connected' : 'disconnected',
         readyState: dbStatus,
         totalPGs: pgCount,
-        samplePG: samplePG
+        samplePG: samplePG,
+        host: mongoose.connection.host,
+        databaseName: mongoose.connection.name
       }
     });
     
@@ -159,7 +211,7 @@ app.get('/api/db-test', async (req, res) => {
 
 // ================ CRUD OPERATIONS ================
 
-// GET all PG listings - FIXED
+// GET all PG listings
 app.get('/api/pg', async (req, res) => {
   try {
     console.log('📋 GET /api/pg');
@@ -247,7 +299,7 @@ app.get('/api/pg', async (req, res) => {
   }
 });
 
-// GET single listing by ID - FIXED TO SHOW REAL DATA
+// GET single listing by ID
 app.get('/api/pg/:id', async (req, res) => {
   try {
     console.log('🔍 GET /api/pg/:id', req.params.id);
@@ -414,6 +466,7 @@ app.post('/api/pg', async (req, res) => {
       });
     }
     
+    // Validate required fields
     if (!req.body.name) {
       return res.status(400).json({
         success: false,
@@ -610,7 +663,7 @@ app.delete('/api/pg/:id', async (req, res) => {
   }
 });
 
-// PATCH endpoints (keep existing)
+// PATCH endpoints
 app.patch('/api/pg/:id/publish', async (req, res) => {
   try {
     const listingId = req.params.id;
@@ -969,17 +1022,29 @@ const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
   console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📊 MongoDB Status: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   
-  console.log('\n📋 Available Endpoints:');
-  console.log(`  🏠 Home:      http://localhost:${PORT}/`);
-  console.log(`  ❤️  Health:    http://localhost:${PORT}/health`);
-  console.log(`  🧪 Test:      http://localhost:${PORT}/api/test`);
-  console.log(`  🔍 DB Test:   http://localhost:${PORT}/api/db-test`);
-  console.log(`  🏢 PG List:   http://localhost:${PORT}/api/pg`);
-  console.log(`  🔍 Search:    http://localhost:${PORT}/api/search?city=Chandigarh&type=boys`);
-  console.log(`  📊 Stats:     http://localhost:${PORT}/api/stats`);
-  console.log(`  📱 Frontend:  https://eassy-to-rent-startup.vercel.app`);
+  // Check connection status with a slight delay
+  setTimeout(() => {
+    const dbStatus = mongoose.connection.readyState;
+    const statusMap = {
+      0: '❌ Disconnected',
+      1: '✅ Connected',
+      2: '🔄 Connecting',
+      3: '⏸️ Disconnecting'
+    };
+    console.log(`📊 MongoDB Status: ${statusMap[dbStatus] || 'Unknown'} (readyState: ${dbStatus})`);
+    
+    console.log('\n📋 Available Endpoints:');
+    console.log(`  🏠 Home:      http://localhost:${PORT}/`);
+    console.log(`  ❤️  Health:    http://localhost:${PORT}/health`);
+    console.log(`  🧪 Test:      http://localhost:${PORT}/api/test`);
+    console.log(`  🔍 DB Test:   http://localhost:${PORT}/api/db-test`);
+    console.log(`  🏢 PG List:   http://localhost:${PORT}/api/pg`);
+    console.log(`  🔍 Search:    http://localhost:${PORT}/api/search?city=Chandigarh&type=boys`);
+    console.log(`  📊 Stats:     http://localhost:${PORT}/api/stats`);
+    console.log(`  📱 Frontend:  https://eassy-to-rent-startup.vercel.app`);
+  }, 1000); // 1 second delay to allow connection
 });
 
 process.on('SIGINT', () => {
@@ -993,4 +1058,4 @@ process.on('SIGINT', () => {
   });
 });
 
-module.exports = app; 
+module.exports = app;
