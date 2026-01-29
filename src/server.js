@@ -1,3 +1,6 @@
+
+
+
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -29,13 +32,7 @@ const config = {
       'https://eassy-to-rent-startup.vercel.app',
       'https://easy-to-rent-startup.vercel.app',
       'https://pg-finder-frontend.vercel.app',
-    ],
-  // Add regex patterns for Vercel preview deployments
-  allowedOriginPatterns: [
-    /^https:\/\/eassy-to-rent-startup-[a-z0-9]+\.vercel\.app$/,
-    /^https:\/\/easy-to-rent-startup-[a-z0-9]+\.vercel\.app$/,
-    /^https:\/\/pg-finder-frontend-[a-z0-9]+\.vercel\.app$/
-  ]
+    ]
 };
 
 // Validate required environment variables
@@ -54,7 +51,6 @@ console.log('🔧 Configuration Loaded:');
 console.log(`   Port: ${config.port}`);
 console.log(`   Environment: ${config.nodeEnv}`);
 console.log(`   CORS Origins: ${config.allowedOrigins.length} origins configured`);
-console.log(`   CORS Patterns: ${config.allowedOriginPatterns.length} regex patterns`);
 
 // ================ SECURITY MIDDLEWARE ================
 
@@ -92,29 +88,15 @@ app.use('/api/', limiter);
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps, curl, postman)
-    if (!origin) {
-      console.log('🌐 No origin header (curl/Postman/mobile app)');
-      return callback(null, true);
-    }
+    if (!origin) return callback(null, true);
     
-    // Check against exact matches
-    if (config.allowedOrigins.includes(origin)) {
-      console.log(`✅ Allowed exact match: ${origin}`);
-      return callback(null, true);
+    if (config.allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('🚫 CORS Blocked Origin:', origin);
+      console.log('✅ Allowed Origins:', config.allowedOrigins);
+      callback(new Error('Not allowed by CORS'));
     }
-    
-    // Check against regex patterns (for Vercel preview deployments)
-    for (const pattern of config.allowedOriginPatterns) {
-      if (pattern.test(origin)) {
-        console.log(`✅ Allowed by regex pattern: ${origin}`);
-        return callback(null, true);
-      }
-    }
-    
-    console.log('🚫 CORS Blocked Origin:', origin);
-    console.log('✅ Allowed Origins:', config.allowedOrigins);
-    console.log('✅ Allowed Patterns:', config.allowedOriginPatterns.map(p => p.toString()));
-    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
@@ -233,9 +215,6 @@ app.use(apiKeyMiddleware);
 app.use((req, res, next) => {
   const start = Date.now();
   const requestId = Date.now() + Math.random().toString(36).substr(2, 9);
-  
-  // Store request ID for this request
-  req.requestId = requestId;
   
   // Log based on log level
   if (['debug', 'info'].includes(config.logLevel)) {
@@ -539,7 +518,7 @@ app.get('/api/db-test', async (req, res) => {
  *       200:
  *         description: PG listing retrieved successfully
  *       400:
- *         description: Invalid ID format or placeholder error
+ *         description: Invalid ID format
  *       404:
  *         description: PG listing not found
  *       500:
@@ -547,121 +526,99 @@ app.get('/api/db-test', async (req, res) => {
  */
 app.get('/api/pg/:id', async (req, res) => {
   try {
-    const id = req.params.id;
-    console.log(`🔍 [${req.requestId}] GET /api/pg/:id - ID: "${id}"`);
-    
-    // Check if it's the literal string ":id" (frontend routing error)
-    if (id === ':id') {
-      console.error(`❌ [${req.requestId}] Frontend error: Received literal string ":id" instead of actual ID`);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid PG ID: Received placeholder ":id"',
-        debug: {
-          requestId: req.requestId,
-          received: ':id',
-          expected: 'MongoDB ObjectId or slug',
-          suggestion: 'Frontend should pass actual ID, not the route parameter placeholder'
-        }
-      });
-    }
+    console.log('🔍 GET /api/pg/:id', req.params.id);
     
     // Validate ID
-    if (!id || id === 'undefined' || id === 'null') {
+    if (!req.params.id || req.params.id === 'undefined' || req.params.id === 'null') {
       return res.status(400).json({
         success: false,
         message: 'PG ID is required',
         debug: {
-          requestId: req.requestId,
-          receivedId: id,
-          type: typeof id
+          receivedId: req.params.id,
+          type: typeof req.params.id
         }
       });
     }
     
     if (!isMongoDBConnected) {
-      console.log(`⚠️ [${req.requestId}] Database not connected`);
+      console.log('⚠️ Database not connected');
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
     let listing;
-    const searchId = id.trim();
+    const id = req.params.id.trim();
     
-    console.log(`🔍 [${req.requestId}] Processing ID: "${searchId}"`);
+    console.log('🔍 Processing ID:', id);
     
     // Strategy 1: Try to find by MongoDB ObjectId
-    if (mongoose.Types.ObjectId.isValid(searchId) && /^[0-9a-fA-F]{24}$/.test(searchId)) {
-      console.log(`🔍 [${req.requestId}] Strategy 1: Searching by MongoDB ObjectId`);
-      listing = await PGListing.findById(searchId);
+    if (mongoose.Types.ObjectId.isValid(id) && /^[0-9a-fA-F]{24}$/.test(id)) {
+      console.log('🔍 Strategy 1: Searching by MongoDB ObjectId');
+      listing = await PGListing.findById(id);
       
       if (listing) {
-        console.log(`✅ [${req.requestId}] Found by ObjectId: ${listing.name}`);
+        console.log('✅ Found by ObjectId:', listing.name);
         return res.json({
           success: true,
           data: listing,
-          foundBy: 'ObjectId',
-          requestId: req.requestId
+          foundBy: 'ObjectId'
         });
       }
     }
     
     // Strategy 2: Try to find by slug
-    console.log(`🔍 [${req.requestId}] Strategy 2: Searching by slug`);
-    listing = await PGListing.findOne({ slug: searchId });
+    console.log('🔍 Strategy 2: Searching by slug');
+    listing = await PGListing.findOne({ slug: id });
     
     if (listing) {
-      console.log(`✅ [${req.requestId}] Found by slug: ${listing.name}`);
+      console.log('✅ Found by slug:', listing.name);
       return res.json({
         success: true,
         data: listing,
-        foundBy: 'slug',
-        requestId: req.requestId
+        foundBy: 'slug'
       });
     }
     
     // Strategy 3: Try to find by name (exact match)
-    console.log(`🔍 [${req.requestId}] Strategy 3: Searching by exact name`);
+    console.log('🔍 Strategy 3: Searching by exact name');
     listing = await PGListing.findOne({ 
-      name: { $regex: `^${searchId.replace(/[-\s]/g, '[-\s]?')}$`, $options: 'i' } 
+      name: { $regex: `^${id.replace(/[-\s]/g, '[-\s]?')}$`, $options: 'i' } 
     });
     
     if (listing) {
-      console.log(`✅ [${req.requestId}] Found by name: ${listing.name}`);
+      console.log('✅ Found by name:', listing.name);
       return res.json({
         success: true,
         data: listing,
-        foundBy: 'name',
-        requestId: req.requestId
+        foundBy: 'name'
       });
     }
     
     // Strategy 4: Try to find by any matching field
-    console.log(`🔍 [${req.requestId}] Strategy 4: Broad search`);
+    console.log('🔍 Strategy 4: Broad search');
     listing = await PGListing.findOne({
       $or: [
-        { name: { $regex: searchId, $options: 'i' } },
-        { address: { $regex: searchId, $options: 'i' } },
-        { city: { $regex: searchId, $options: 'i' } },
-        { locality: { $regex: searchId, $options: 'i' } },
-        { _id: searchId }
+        { name: { $regex: id, $options: 'i' } },
+        { address: { $regex: id, $options: 'i' } },
+        { city: { $regex: id, $options: 'i' } },
+        { locality: { $regex: id, $options: 'i' } },
+        { _id: id }
       ]
     });
     
     if (listing) {
-      console.log(`✅ [${req.requestId}] Found by broad search: ${listing.name}`);
+      console.log('✅ Found by broad search:', listing.name);
       return res.json({
         success: true,
         data: listing,
-        foundBy: 'broad',
-        requestId: req.requestId
+        foundBy: 'broad'
       });
     }
     
     // If not found after all strategies
-    console.log(`❌ [${req.requestId}] No listing found for ID: "${searchId}"`);
+    console.log('❌ No listing found for ID:', id);
     
     // Get all available PGs for debugging
     const allPGs = await PGListing.find({}, '_id name slug').limit(10);
@@ -669,10 +626,8 @@ app.get('/api/pg/:id', async (req, res) => {
     return res.status(404).json({
       success: false,
       message: 'PG listing not found',
-      requestId: req.requestId,
       debug: {
-        searchedId: searchId,
-        searchAttempts: ['ObjectId', 'slug', 'name', 'broad'],
+        searchedId: id,
         availablePGs: allPGs.map(pg => ({
           id: pg._id,
           name: pg.name,
@@ -682,13 +637,12 @@ app.get('/api/pg/:id', async (req, res) => {
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error in GET /api/pg/:id:`, error);
+    console.error('❌ Error in GET /api/pg/:id:', error);
     
     return res.status(500).json({ 
       success: false, 
       message: 'Server error',
       error: error.message,
-      requestId: req.requestId,
       stack: config.nodeEnv === 'development' ? error.stack : undefined
     });
   }
@@ -780,15 +734,14 @@ app.get('/api/pg', async (req, res) => {
       admin
     } = req.query;
 
-    console.log(`📋 [${req.requestId}] GET /api/pg`, { page, limit, type, city, search });
+    console.log('📋 GET /api/pg', { page, limit, type, city, search });
     
     if (!isMongoDBConnected) {
-      console.log(`⚠️ [${req.requestId}] Database not connected`);
+      console.log('⚠️ Database not connected');
       return res.status(500).json({
         success: false,
         message: 'Database not connected',
-        data: [],
-        requestId: req.requestId
+        data: []
       });
     }
     
@@ -834,7 +787,7 @@ app.get('/api/pg', async (req, res) => {
       .skip(skip)
       .limit(Number(limit));
 
-    console.log(`✅ [${req.requestId}] Found ${listings.length} listings from MongoDB (Total: ${total})`);
+    console.log(`✅ Found ${listings.length} listings from MongoDB (Total: ${total})`);
     
     return res.json({
       success: true,
@@ -846,17 +799,15 @@ app.get('/api/pg', async (req, res) => {
         itemsPerPage: Number(limit),
         hasNextPage: Number(page) < totalPages,
         hasPrevPage: Number(page) > 1
-      },
-      requestId: req.requestId
+      }
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error fetching listings:`, error);
+    console.error('❌ Error fetching listings:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Server error',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -906,14 +857,13 @@ app.get('/api/pg', async (req, res) => {
  */
 app.post('/api/pg', async (req, res) => {
   try {
-    console.log(`➕ [${req.requestId}] POST /api/pg`);
+    console.log('➕ POST /api/pg');
     
     if (!isMongoDBConnected) {
-      console.log(`❌ [${req.requestId}] MongoDB not connected`);
+      console.log('❌ MongoDB not connected');
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
@@ -921,16 +871,14 @@ app.post('/api/pg', async (req, res) => {
     if (!req.body.name) {
       return res.status(400).json({
         success: false,
-        message: 'Name is required',
-        requestId: req.requestId
+        message: 'Name is required'
       });
     }
     
     if (!req.body.price) {
       return res.status(400).json({
         success: false,
-        message: 'Price is required',
-        requestId: req.requestId
+        message: 'Price is required'
       });
     }
     
@@ -941,7 +889,7 @@ app.post('/api/pg', async (req, res) => {
       .replace(/[^a-z0-9-]/g, '')
       .replace(/-+/g, '-');
     
-    console.log(`📝 [${req.requestId}] Generated slug: ${slug}`);
+    console.log('📝 Generated slug:', slug);
     
     const listingData = {
       name: req.body.name,
@@ -973,30 +921,28 @@ app.post('/api/pg', async (req, res) => {
       contactPhone: req.body.contactPhone || '9315058665'
     };
     
-    console.log(`📦 [${req.requestId}] Creating listing: ${listingData.name}`);
+    console.log('📦 Creating listing:', listingData.name);
     
     const newListing = new PGListing(listingData);
     const savedListing = await newListing.save();
     
-    console.log(`✅ [${req.requestId}] Listing saved to database!`);
-    console.log(`   ID: ${savedListing._id}`);
-    console.log(`   Name: ${savedListing.name}`);
-    console.log(`   Slug: ${savedListing.slug}`);
+    console.log('✅ Listing saved to database!');
+    console.log('ID:', savedListing._id);
+    console.log('Name:', savedListing.name);
+    console.log('Slug:', savedListing.slug);
     
     return res.status(201).json({
       success: true,
       message: 'PG listing created successfully',
-      data: savedListing,
-      requestId: req.requestId
+      data: savedListing
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error creating listing:`, error);
+    console.error('❌ Error creating listing:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to create listing',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1042,13 +988,12 @@ app.post('/api/pg', async (req, res) => {
  */
 app.put('/api/pg/:id', async (req, res) => {
   try {
-    console.log(`✏️ [${req.requestId}] PUT /api/pg/:id ${req.params.id}`);
+    console.log('✏️ PUT /api/pg/:id', req.params.id);
     
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
@@ -1057,8 +1002,7 @@ app.put('/api/pg/:id', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(listingId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid listing ID format',
-        requestId: req.requestId
+        message: 'Invalid listing ID format'
       });
     }
     
@@ -1066,8 +1010,7 @@ app.put('/api/pg/:id', async (req, res) => {
     if (!existingListing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found',
-        requestId: req.requestId
+        message: 'Listing not found'
       });
     }
     
@@ -1108,22 +1051,20 @@ app.put('/api/pg/:id', async (req, res) => {
       { new: true, runValidators: true }
     );
     
-    console.log(`✅ [${req.requestId}] Listing updated: ${updatedListing._id}`);
+    console.log('✅ Listing updated:', updatedListing._id);
     
     return res.json({
       success: true,
       message: 'Listing updated successfully',
-      data: updatedListing,
-      requestId: req.requestId
+      data: updatedListing
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error updating listing:`, error);
+    console.error('❌ Error updating listing:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to update listing',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1156,13 +1097,12 @@ app.put('/api/pg/:id', async (req, res) => {
  */
 app.delete('/api/pg/:id', async (req, res) => {
   try {
-    console.log(`🗑️ [${req.requestId}] DELETE /api/pg/:id ${req.params.id}`);
+    console.log('🗑️ DELETE /api/pg/:id', req.params.id);
     
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
@@ -1171,8 +1111,7 @@ app.delete('/api/pg/:id', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(listingId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid listing ID format',
-        requestId: req.requestId
+        message: 'Invalid listing ID format'
       });
     }
     
@@ -1180,28 +1119,25 @@ app.delete('/api/pg/:id', async (req, res) => {
     if (!existingListing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found',
-        requestId: req.requestId
+        message: 'Listing not found'
       });
     }
     
     await PGListing.findByIdAndDelete(listingId);
     
-    console.log(`✅ [${req.requestId}] Listing deleted: ${listingId}`);
+    console.log('✅ Listing deleted:', listingId);
     
     return res.json({
       success: true,
-      message: 'Listing deleted successfully',
-      requestId: req.requestId
+      message: 'Listing deleted successfully'
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error deleting listing:`, error);
+    console.error('❌ Error deleting listing:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to delete listing',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1254,16 +1190,14 @@ app.patch('/api/pg/:id/publish', async (req, res) => {
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
     if (!mongoose.Types.ObjectId.isValid(listingId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid listing ID format',
-        requestId: req.requestId
+        message: 'Invalid listing ID format'
       });
     }
     
@@ -1276,25 +1210,22 @@ app.patch('/api/pg/:id/publish', async (req, res) => {
     if (!updatedListing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found',
-        requestId: req.requestId
+        message: 'Listing not found'
       });
     }
     
     return res.json({
       success: true,
       message: `Listing ${published ? 'published' : 'unpublished'} successfully`,
-      data: updatedListing,
-      requestId: req.requestId
+      data: updatedListing
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error toggling publish:`, error);
+    console.error('Error toggling publish:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update listing',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1345,16 +1276,14 @@ app.patch('/api/pg/:id/feature', async (req, res) => {
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
     if (!mongoose.Types.ObjectId.isValid(listingId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid listing ID format',
-        requestId: req.requestId
+        message: 'Invalid listing ID format'
       });
     }
     
@@ -1367,25 +1296,22 @@ app.patch('/api/pg/:id/feature', async (req, res) => {
     if (!updatedListing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found',
-        requestId: req.requestId
+        message: 'Listing not found'
       });
     }
     
     return res.json({
       success: true,
       message: `Listing ${featured ? 'featured' : 'unfeatured'} successfully`,
-      data: updatedListing,
-      requestId: req.requestId
+      data: updatedListing
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error toggling feature:`, error);
+    console.error('Error toggling feature:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update listing',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1436,16 +1362,14 @@ app.patch('/api/pg/:id/verify', async (req, res) => {
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
     if (!mongoose.Types.ObjectId.isValid(listingId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid listing ID format',
-        requestId: req.requestId
+        message: 'Invalid listing ID format'
       });
     }
     
@@ -1458,25 +1382,22 @@ app.patch('/api/pg/:id/verify', async (req, res) => {
     if (!updatedListing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found',
-        requestId: req.requestId
+        message: 'Listing not found'
       });
     }
     
     return res.json({
       success: true,
       message: `Listing ${verified ? 'verified' : 'unverified'} successfully`,
-      data: updatedListing,
-      requestId: req.requestId
+      data: updatedListing
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error toggling verify:`, error);
+    console.error('Error toggling verify:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update listing',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1503,8 +1424,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
@@ -1514,8 +1434,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
       return res.json({
         success: true,
         message: `Database already has ${existingCount} listings. No sample data added.`,
-        count: existingCount,
-        requestId: req.requestId
+        count: existingCount
       });
     }
     
@@ -1612,7 +1531,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
       const newListing = new PGListing(listing);
       const saved = await newListing.save();
       savedListings.push(saved);
-      console.log(`✅ [${req.requestId}] Added: ${saved.name} (ID: ${saved._id}, Slug: ${saved.slug})`);
+      console.log(`✅ Added: ${saved.name} (ID: ${saved._id}, Slug: ${saved.slug})`);
     }
     
     return res.json({
@@ -1625,17 +1544,15 @@ app.post('/api/pg/sample-data', async (req, res) => {
         slug: pg.slug,
         price: pg.price,
         type: pg.type
-      })),
-      requestId: req.requestId
+      }))
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error adding sample data:`, error);
+    console.error('❌ Error adding sample data:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Failed to add sample data',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1684,13 +1601,12 @@ app.get('/api/search', async (req, res) => {
   try {
     const { city, type, minPrice, maxPrice, amenities } = req.query;
     
-    console.log(`🔍 [${req.requestId}] GET /api/search`, { city, type, minPrice, maxPrice, amenities });
+    console.log('🔍 GET /api/search', { city, type, minPrice, maxPrice, amenities });
     
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
@@ -1709,22 +1625,20 @@ app.get('/api/search', async (req, res) => {
     
     const listings = await PGListing.find(query).sort({ featured: -1, rating: -1 });
     
-    console.log(`✅ [${req.requestId}] Found ${listings.length} listings`);
+    console.log(`✅ Found ${listings.length} listings`);
     
     return res.json({
       success: true,
       count: listings.length,
-      data: listings,
-      requestId: req.requestId
+      data: listings
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Search error:`, error);
+    console.error('❌ Search error:', error);
     return res.status(500).json({
       success: false,
       message: 'Search failed',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1744,8 +1658,6 @@ app.get('/api/search', async (req, res) => {
  */
 app.get('/api/stats', async (req, res) => {
   try {
-    console.log(`📊 [${req.requestId}] GET /api/stats`);
-    
     if (!isMongoDBConnected) {
       return res.json({
         success: true,
@@ -1760,8 +1672,7 @@ app.get('/api/stats', async (req, res) => {
           avgPrice: 0,
           lastUpdated: new Date().toISOString(),
           message: 'Database not connected'
-        },
-        requestId: req.requestId
+        }
       });
     }
     
@@ -1780,8 +1691,6 @@ app.get('/api/stats', async (req, res) => {
     
     const avgPrice = avgPriceResult.length > 0 ? Math.round(avgPriceResult[0].avgPrice) : 0;
     
-    console.log(`✅ [${req.requestId}] Stats calculated: ${totalPGs} total PGs`);
-    
     return res.json({
       success: true,
       data: {
@@ -1794,17 +1703,15 @@ app.get('/api/stats', async (req, res) => {
         verifiedPGs,
         avgPrice,
         lastUpdated: new Date().toISOString()
-      },
-      requestId: req.requestId
+      }
     });
     
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Stats error:`, error);
+    console.error('❌ Stats error:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to get stats',
-      error: error.message,
-      requestId: req.requestId
+      error: error.message
     });
   }
 });
@@ -1815,8 +1722,7 @@ app.get('/api/pg-test/list', async (req, res) => {
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
@@ -1829,15 +1735,13 @@ app.get('/api/pg-test/list', async (req, res) => {
       debugInfo: {
         note: 'Use these IDs to test individual PG endpoints',
         example: `GET /api/pg/${listings.length > 0 ? listings[0]._id : 'ID_HERE'}`
-      },
-      requestId: req.requestId
+      }
     });
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error in pg-test/list:`, error);
+    console.error('Error in pg-test/list:', error);
     return res.status(500).json({ 
       success: false, 
-      error: error.message,
-      requestId: req.requestId
+      error: error.message 
     });
   }
 });
@@ -1847,13 +1751,12 @@ app.get('/api/pg-test/find/:query', async (req, res) => {
     if (!isMongoDBConnected) {
       return res.status(500).json({
         success: false,
-        message: 'Database not connected',
-        requestId: req.requestId
+        message: 'Database not connected'
       });
     }
     
     const query = req.params.query;
-    console.log(`🔍 [${req.requestId}] Test find query: "${query}"`);
+    console.log('🔍 Test find query:', query);
     
     const listings = await PGListing.find({
       $or: [
@@ -1869,53 +1772,37 @@ app.get('/api/pg-test/find/:query', async (req, res) => {
       query: query,
       count: listings.length,
       data: listings,
-      searchMethods: ['ObjectId', 'slug', 'name', 'address'],
-      requestId: req.requestId
+      searchMethods: ['ObjectId', 'slug', 'name', 'address']
     });
   } catch (error) {
-    console.error(`❌ [${req.requestId}] Error in pg-test/find:`, error);
+    console.error('Error in pg-test/find:', error);
     return res.status(500).json({ 
       success: false, 
-      error: error.message,
-      requestId: req.requestId
+      error: error.message 
     });
   }
 });
 
 // ================ ERROR HANDLERS ================
 app.use((err, req, res, next) => {
-  console.error(`🚨 [${req.requestId || 'NO-ID'}] Global Error Handler:`, err.message);
-  
-  // Handle CORS errors specifically
-  if (err.message === 'Not allowed by CORS') {
-    return res.status(403).json({
-      success: false,
-      message: 'CORS Error: Origin not allowed',
-      origin: req.headers.origin,
-      requestId: req.requestId,
-      allowedOrigins: config.allowedOrigins.filter(o => !(o instanceof RegExp)),
-      allowedPatterns: config.allowedOriginPatterns.map(p => p.toString())
-    });
-  }
+  console.error('🚨 Global Error Handler:', err.message);
   
   return res.status(err.status || 500).json({
     success: false,
     message: 'Internal server error',
     error: config.nodeEnv === 'development' ? err.message : 'Something went wrong',
-    requestId: req.requestId,
     stack: config.nodeEnv === 'development' ? err.stack : undefined
   });
 });
 
 app.all('*', (req, res) => {
-  console.log(`❌ [${req.requestId}] 404: ${req.method} ${req.originalUrl}`);
+  console.log(`❌ 404: ${req.method} ${req.originalUrl}`);
   
   return res.status(404).json({
     success: false,
     error: 'Endpoint not found',
     path: req.originalUrl,
     method: req.method,
-    requestId: req.requestId,
     availableEndpoints: [
       'GET  /',
       'GET  /health',
