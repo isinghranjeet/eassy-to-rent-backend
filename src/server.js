@@ -1,85 +1,89 @@
-
-
-
-
-
-// server-fixed.js - Complete fixed version
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const PGListing = require('./models/PGListing'); // Import the model
+const PGListing = require('./models/PGListing');
 
 const app = express();
 
-// ================ CORS CONFIGURATION ================
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:5173',
-  'https://eassy-to-rent-startup.vercel.app',
-  'https://easy-to-rent-startup.vercel.app',
-  'https://pg-finder-frontend.vercel.app',
-];
+// ================ CORS CONFIGURATION - COMPLETELY OPEN ================
+console.log('🛡️ Setting up CORS with wildcard access...');
 
+// Option 1: Simple wildcard CORS (Recommended for now)
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('🚫 CORS Blocked Origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: '*', // ✅ ALLOW EVERYTHING - TEMPORARY FIX
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  optionsSuccessStatus: 204,
+  maxAge: 86400
 }));
 
-app.options('*', cors());
+// Option 2: Debugging CORS middleware
+app.use((req, res, next) => {
+  console.log('\n' + '='.repeat(50));
+  console.log(`🌍 ${new Date().toISOString()} ${req.method} ${req.url}`);
+  console.log(`🌍 Origin: ${req.headers.origin || 'No Origin'}`);
+  console.log(`🌍 Referer: ${req.headers.referer || 'No Referer'}`);
+  console.log(`🌍 User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'Unknown'}`);
+  
+  // Set CORS headers manually
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    console.log('🛬 Handling OPTIONS preflight request');
+    return res.status(204).end();
+  }
+  
+  next();
+});
 
 // ================ MIDDLEWARE ================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-app.use((req, res, next) => {
-  console.log(`\n${new Date().toISOString()} ${req.method} ${req.url}`);
-  console.log('Origin:', req.headers.origin || 'No Origin Header');
-  next();
-});
 // ================ MONGODB ATLAS CONNECTION ================
 const MONGODB_URI = process.env.MONGO_URI || 'mongodb+srv://rsinghranjeet74282:Ranjeet123@cluster0.ibrwq.mongodb.net/pgfinder?retryWrites=true&w=majority&appName=Cluster0';
 
-console.log('🔌 Attempting MongoDB Atlas connection...');
+console.log('\n🔌 Attempting MongoDB Atlas connection...');
 
 mongoose.connect(MONGODB_URI, {
   serverSelectionTimeoutMS: 10000,
   socketTimeoutMS: 45000,
+  maxPoolSize: 10,
 })
   .then(() => {
     console.log('✅ MongoDB Atlas Connected Successfully!');
-    console.log(`Database: ${mongoose.connection.name}`);
+    console.log(`📊 Database: ${mongoose.connection.name}`);
+    console.log(`📊 Host: ${mongoose.connection.host}`);
   })
   .catch(err => {
     console.error('❌ MongoDB Atlas Connection Error:', err.message);
-    console.log('⚠️ Running in fallback mode');
   });
-  
+
 // ================ ROUTES ================
+
+// Home route with CORS debug info
 app.get('/', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected';
   
   res.json({
-    message: '🏠 PG Finder Backend API v2.1.0',
+    message: '🏠 PG Finder Backend API v2.2.0',
     status: 'running 🚀',
     database: dbStatus,
-    timestamp: new Date().toISOString(),
+    cors: {
+      enabled: true,
+      origin: req.headers.origin || 'Unknown',
+      method: req.method,
+      timestamp: new Date().toISOString()
+    },
     endpoints: {
       createPG: 'POST /api/pg',
       getPGs: 'GET /api/pg',
@@ -92,27 +96,46 @@ app.get('/', (req, res) => {
       health: 'GET /health',
       test: 'GET /api/test',
       stats: 'GET /api/stats',
-      dbTest: 'GET /api/db-test'
+      dbTest: 'GET /api/db-test',
+      search: 'GET /api/search'
     }
   });
 });
 
-// Health check
+// Health check with detailed CORS info
 app.get('/health', (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1;
-  return res.json({
+  
+  res.json({
     status: 'healthy',
-    database: { connected: dbStatus },
-    cors: { origin: req.headers.origin || 'No Origin' }
+    timestamp: new Date().toISOString(),
+    cors: {
+      origin: req.headers.origin || 'No Origin Header',
+      allowed: true,
+      method: req.method
+    },
+    database: { 
+      connected: dbStatus,
+      readyState: mongoose.connection.readyState 
+    },
+    server: {
+      memory: process.memoryUsage(),
+      uptime: process.uptime()
+    }
   });
 });
 
-// Test endpoint
+// Simple test endpoint
 app.get('/api/test', (req, res) => {
-  return res.json({
+  res.json({
     success: true,
-    message: '✅ API is working!',
-    data: { serverTime: new Date().toISOString() }
+    message: '✅ API is working perfectly!',
+    data: { 
+      serverTime: new Date().toISOString(),
+      clientOrigin: req.headers.origin || 'Direct Access',
+      clientIP: req.ip
+    },
+    cors: 'Enabled for all origins'
   });
 });
 
@@ -126,54 +149,69 @@ app.get('/api/db-test', async (req, res) => {
     if (dbStatus === 1) {
       pgCount = await PGListing.countDocuments({});
       
-      // Get one sample PG if exists
       const pgs = await PGListing.find({}).limit(1);
       if (pgs.length > 0) {
         samplePG = {
           id: pgs[0]._id,
           name: pgs[0].name,
-          price: pgs[0].price
+          price: pgs[0].price,
+          type: pgs[0].type,
+          city: pgs[0].city
         };
       }
     }
     
-    return res.json({
+    res.json({
       success: true,
       database: {
         status: dbStatus === 1 ? 'connected' : 'disconnected',
         readyState: dbStatus,
         totalPGs: pgCount,
-        samplePG: samplePG
+        samplePG: samplePG,
+        connectionString: MONGODB_URI ? 'Using Atlas connection' : 'Using fallback'
+      },
+      cors: {
+        origin: req.headers.origin || 'No Origin',
+        timestamp: new Date().toISOString()
       }
     });
     
   } catch (error) {
     console.error('❌ DB test error:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Database test failed',
-      error: error.message
+      error: error.message,
+      cors: 'Enabled'
     });
   }
 });
 
-// ================ CRUD OPERATIONS ================
+// ================ MAIN PG LISTINGS ENDPOINT ================
 
-// GET all PG listings - FIXED
+// GET all PG listings - WITH CORS DEBUGGING
 app.get('/api/pg', async (req, res) => {
   try {
-    console.log('📋 GET /api/pg');
-    console.log('Database readyState:', mongoose.connection.readyState);
+    console.log('\n📋 GET /api/pg - Request Details:');
+    console.log('🔗 Full URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
+    console.log('📍 Origin:', req.headers.origin || 'No Origin');
+    console.log('📍 Referer:', req.headers.referer || 'No Referer');
+    console.log('📍 Query Params:', req.query);
+    
+    // Set CORS headers explicitly for this route
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Expose-Headers', 'X-Total-Count, Content-Type');
     
     // Try to get real data from database
     if (mongoose.connection.readyState === 1) {
       const query = {};
       
+      // Apply filters
       if (req.query.type && req.query.type !== 'all') {
         query.type = req.query.type;
       }
       
-      if (req.query.city) {
+      if (req.query.city && req.query.city !== 'all') {
         query.city = { $regex: req.query.city, $options: 'i' };
       }
       
@@ -182,7 +220,8 @@ app.get('/api/pg', async (req, res) => {
           { name: { $regex: req.query.search, $options: 'i' } },
           { address: { $regex: req.query.search, $options: 'i' } },
           { city: { $regex: req.query.search, $options: 'i' } },
-          { description: { $regex: req.query.search, $options: 'i' } }
+          { description: { $regex: req.query.search, $options: 'i' } },
+          { locality: { $regex: req.query.search, $options: 'i' } }
         ];
       }
       
@@ -190,213 +229,145 @@ app.get('/api/pg', async (req, res) => {
         query.published = true;
       }
       
-      const listings = await PGListing.find(query).sort({ createdAt: -1 });
+      const listings = await PGListing.find(query).sort({ createdAt: -1 }).limit(100);
       
       console.log(`✅ Found ${listings.length} REAL listings from MongoDB Atlas`);
       
       if (listings.length > 0) {
-        console.log('Sample listing IDs:', listings.slice(0, 3).map(l => l._id));
+        console.log('📊 Sample listings:', listings.slice(0, 3).map(l => ({
+          id: l._id,
+          name: l.name,
+          price: l.price,
+          city: l.city,
+          type: l.type
+        })));
       }
       
-      return res.json({
+      // Add CORS debug info to response
+      const responseData = {
         success: true,
         count: listings.length,
-        data: listings
-      });
+        data: listings,
+        debug: {
+          timestamp: new Date().toISOString(),
+          origin: req.headers.origin || 'Direct',
+          database: 'MongoDB Atlas',
+          queryUsed: query,
+          cors: {
+            enabled: true,
+            origin: '*',
+            method: 'GET'
+          }
+        }
+      };
+      
+      return res.json(responseData);
     }
     
-    // If database not connected, return minimal sample data
-    console.log('⚠️ MongoDB not connected, returning minimal sample data');
+    // If database not connected, return helpful error
+    console.log('⚠️ MongoDB not connected, returning error message');
     
-    const sampleData = [
-      {
-        _id: 'sample-1',
-        name: 'Sample PG - Database not connected',
-        city: 'Chandigarh',
-        price: 8500,
-        type: 'co-ed',
-        description: 'Real data unavailable. Please check database connection.',
-        images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800'],
-        amenities: ['WiFi', 'AC'],
-        rating: 4.0,
-        reviewCount: 0,
-        ownerName: 'Sample',
-        ownerPhone: '9315058665',
-        address: 'Sample Address',
-        verified: false,
-        featured: false,
-        published: true,
-        createdAt: new Date()
-      }
-    ];
-    
-    return res.json({
-      success: true,
-      message: 'Using minimal sample data (database not connected)',
-      count: sampleData.length,
-      data: sampleData
+    res.status(503).json({
+      success: false,
+      message: 'Database connection issue',
+      debug: {
+        databaseStatus: mongoose.connection.readyState,
+        timestamp: new Date().toISOString(),
+        cors: 'Enabled but database not connected'
+      },
+      suggestions: [
+        'Check MongoDB Atlas connection',
+        'Verify network connectivity',
+        'Check if database has PGs published'
+      ]
     });
     
   } catch (error) {
     console.error('❌ Error fetching listings:', error);
-    return res.status(500).json({ 
+    
+    res.status(500).json({ 
       success: false, 
-      message: 'Server error',
-      error: error.message
+      message: 'Server error while fetching listings',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      debug: {
+        timestamp: new Date().toISOString(),
+        origin: req.headers.origin || 'Unknown',
+        cors: 'Enabled'
+      }
     });
   }
 });
 
-// GET single listing by ID - FIXED TO SHOW REAL DATA
+// GET single PG by ID
 app.get('/api/pg/:id', async (req, res) => {
   try {
-    console.log('🔍 GET /api/pg/:id', req.params.id);
-    console.log('Database readyState:', mongoose.connection.readyState);
+    console.log(`🔍 GET /api/pg/${req.params.id}`);
+    console.log('Origin:', req.headers.origin || 'Direct');
     
-    // Validate ID
-    if (!req.params.id || req.params.id === 'undefined') {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
+    const listingId = req.params.id;
+    
+    if (!listingId || listingId === 'undefined') {
       return res.status(400).json({
         success: false,
         message: 'PG ID is required'
       });
     }
     
-    // Check database connection
     if (mongoose.connection.readyState !== 1) {
-      console.log('⚠️ Database not connected, returning sample data');
-      
-      const sampleData = {
-        _id: req.params.id,
-        name: 'Sample PG - Database Issue',
-        description: 'Unable to connect to database. Please try again later.',
-        city: 'Chandigarh',
-        address: 'Database connection issue',
-        price: 0,
-        type: 'co-ed',
-        images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800'],
-        amenities: ['Database not connected'],
-        verified: false,
-        featured: false,
-        rating: 0,
-        reviewCount: 0,
-        ownerName: 'System',
-        ownerPhone: '9315058665',
-        contactPhone: '9315058665',
-        contactEmail: 'support@example.com',
-        googleMapLink: '',
-        roomTypes: ['Single'],
-        distance: 'Unknown',
-        availability: 'unavailable',
-        published: false,
-        createdAt: new Date().toISOString(),
-        gallery: []
-      };
-      
-      return res.json({
-        success: true,
+      return res.status(503).json({
+        success: false,
         message: 'Database not connected',
-        data: sampleData
+        cors: 'Enabled'
       });
     }
-    
-    // Try to fetch from database
-    console.log('🔍 Searching for PG in database with ID:', req.params.id);
     
     let listing;
-    try {
-      // First try with findById
-      listing = await PGListing.findById(req.params.id);
-      
-      if (!listing) {
-        // Try to find by any field containing the ID
-        listing = await PGListing.findOne({
-          $or: [
-            { _id: req.params.id },
-            { name: { $regex: req.params.id, $options: 'i' } }
-          ]
-        });
-      }
-    } catch (dbError) {
-      console.log('❌ Database query error:', dbError.message);
+    
+    // Try to find by ID
+    if (mongoose.Types.ObjectId.isValid(listingId)) {
+      listing = await PGListing.findById(listingId);
     }
     
-    if (listing) {
-      console.log('✅ FOUND REAL LISTING IN DATABASE!');
-      console.log('ID:', listing._id);
-      console.log('Name:', listing.name);
-      console.log('Price:', listing.price);
-      console.log('Type:', listing.type);
-      
-      return res.json({
-        success: true,
-        message: 'Real data loaded from database',
-        data: listing
-      });
-    }
-    
-    console.log('❌ Listing not found in database, checking if it might be a mock ID');
-    
-    // If not found and looks like a mock ID
-    if (req.params.id.includes('mock') || req.params.id.includes('sample')) {
-      const sampleData = {
-        _id: req.params.id,
-        name: 'Sample PG Listing',
-        description: 'This is a sample PG listing for testing purposes.',
-        city: 'Chandigarh',
-        address: 'Sample Location',
-        price: 8500,
-        type: 'co-ed',
-        images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800'],
-        amenities: ['WiFi', 'AC', 'Meals', 'Parking'],
-        verified: true,
-        featured: true,
-        rating: 4.5,
-        reviewCount: 128,
-        ownerName: 'Sample Owner',
-        ownerPhone: '9315058665',
-        contactPhone: '9315058665',
-        contactEmail: 'sample@example.com',
-        googleMapLink: '',
-        roomTypes: ['Single', 'Double', 'Triple'],
-        distance: '500m from University',
-        availability: 'available',
-        published: true,
-        createdAt: new Date().toISOString(),
-        gallery: [
-          'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800',
-          'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w-800'
+    // If not found by ID, try to find by name or other fields
+    if (!listing) {
+      listing = await PGListing.findOne({
+        $or: [
+          { name: { $regex: listingId, $options: 'i' } },
+          { slug: listingId }
         ]
-      };
-      
-      return res.json({
-        success: true,
-        message: 'Using sample data for mock ID',
-        data: sampleData
       });
     }
     
-    // If not found and not a mock ID
-    console.log('❌ PG not found with ID:', req.params.id);
+    if (!listing) {
+      return res.status(404).json({
+        success: false,
+        message: 'PG listing not found',
+        requestedId: listingId,
+        cors: 'Enabled'
+      });
+    }
     
-    return res.status(404).json({
-      success: false,
-      message: 'PG listing not found'
+    res.json({
+      success: true,
+      data: listing,
+      cors: {
+        origin: req.headers.origin || 'Direct',
+        allowed: true
+      }
     });
     
   } catch (error) {
-    console.error('❌ Error in GET /api/pg/:id:', error);
+    console.error('Error fetching single PG:', error);
     
-    if (error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid PG ID format'
-      });
-    }
-    
-    return res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Server error',
-      error: error.message
+      error: error.message,
+      cors: 'Enabled'
     });
   }
 });
@@ -405,42 +376,47 @@ app.get('/api/pg/:id', async (req, res) => {
 app.post('/api/pg', async (req, res) => {
   try {
     console.log('➕ POST /api/pg');
+    console.log('Origin:', req.headers.origin || 'Direct');
+    console.log('Body length:', JSON.stringify(req.body).length);
+    
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
     
     if (mongoose.connection.readyState !== 1) {
-      console.log('❌ MongoDB not connected');
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
     }
     
-    if (!req.body.name) {
+    // Validation
+    if (!req.body.name || !req.body.name.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Name is required'
+        message: 'PG name is required'
       });
     }
     
-    if (!req.body.price) {
+    if (!req.body.price || isNaN(req.body.price)) {
       return res.status(400).json({
         success: false,
-        message: 'Price is required'
+        message: 'Valid price is required'
       });
     }
     
     const listingData = {
-      name: req.body.name,
+      name: req.body.name.trim(),
       description: req.body.description || '',
       city: req.body.city || 'Chandigarh',
       locality: req.body.locality || '',
       address: req.body.address || '',
       price: Number(req.body.price),
       type: req.body.type || 'boys',
-      images: req.body.images || [],
-      gallery: req.body.gallery || [],
+      images: Array.isArray(req.body.images) ? req.body.images : [],
+      gallery: Array.isArray(req.body.gallery) ? req.body.gallery : [],
       googleMapLink: req.body.googleMapLink || '',
-      amenities: req.body.amenities || [],
-      roomTypes: req.body.roomTypes || ['Single', 'Double'],
+      amenities: Array.isArray(req.body.amenities) ? req.body.amenities : [],
+      roomTypes: Array.isArray(req.body.roomTypes) ? req.body.roomTypes : ['Single', 'Double'],
       distance: req.body.distance || '',
       availability: req.body.availability || 'available',
       location: req.body.location || { type: 'Point', coordinates: [0, 0] },
@@ -450,11 +426,11 @@ app.post('/api/pg', async (req, res) => {
       rating: req.body.rating || 0,
       reviewCount: req.body.reviewCount || 0,
       ownerName: req.body.ownerName || '',
-      ownerPhone: req.body.ownerPhone || '9315058665',
+      ownerPhone: req.body.ownerPhone || '',
       ownerEmail: req.body.ownerEmail || '',
       ownerId: req.body.ownerId || '',
       contactEmail: req.body.contactEmail || '',
-      contactPhone: req.body.contactPhone || '9315058665',
+      contactPhone: req.body.contactPhone || '',
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -462,35 +438,40 @@ app.post('/api/pg', async (req, res) => {
     const newListing = new PGListing(listingData);
     const savedListing = await newListing.save();
     
-    console.log('✅ REAL listing saved to database!');
-    console.log('ID:', savedListing._id);
-    console.log('Name:', savedListing.name);
-    console.log('Price:', savedListing.price);
+    console.log(`✅ PG created: ${savedListing.name} (₹${savedListing.price})`);
     
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message: 'PG listing created successfully',
-      data: savedListing
+      data: savedListing,
+      cors: {
+        origin: req.headers.origin || 'Direct',
+        allowed: true
+      }
     });
     
   } catch (error) {
-    console.error('❌ Error creating listing:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Failed to create listing',
-      error: error.message
+    console.error('❌ Error creating PG:', error);
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create PG listing',
+      error: error.message,
+      cors: 'Enabled'
     });
   }
 });
 
-// UPDATE listing by ID
+// UPDATE PG listing
 app.put('/api/pg/:id', async (req, res) => {
   try {
-    console.log('✏️ PUT /api/pg/:id', req.params.id);
+    console.log(`✏️ PUT /api/pg/${req.params.id}`);
+    
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
     
     if (mongoose.connection.readyState !== 1) {
-      console.log('❌ MongoDB not connected');
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
@@ -514,7 +495,6 @@ app.put('/api/pg/:id', async (req, res) => {
     }
     
     const updateData = {};
-    
     const fields = [
       'name', 'description', 'city', 'locality', 'address', 'price', 'type',
       'images', 'gallery', 'googleMapLink', 'amenities', 'roomTypes',
@@ -543,9 +523,7 @@ app.put('/api/pg/:id', async (req, res) => {
       { new: true, runValidators: true }
     );
     
-    console.log('✅ Listing updated:', updatedListing._id);
-    
-    return res.json({
+    res.json({
       success: true,
       message: 'Listing updated successfully',
       data: updatedListing
@@ -553,22 +531,24 @@ app.put('/api/pg/:id', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Error updating listing:', error);
-    return res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to update listing',
       error: error.message
     });
   }
 });
 
-// DELETE listing by ID
+// DELETE PG listing
 app.delete('/api/pg/:id', async (req, res) => {
   try {
-    console.log('🗑️ DELETE /api/pg/:id', req.params.id);
+    console.log(`🗑️ DELETE /api/pg/${req.params.id}`);
+    
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
     
     if (mongoose.connection.readyState !== 1) {
-      console.log('❌ MongoDB not connected');
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
@@ -593,31 +573,32 @@ app.delete('/api/pg/:id', async (req, res) => {
     
     await PGListing.findByIdAndDelete(listingId);
     
-    console.log('✅ Listing deleted:', listingId);
-    
-    return res.json({
+    res.json({
       success: true,
       message: 'Listing deleted successfully'
     });
     
   } catch (error) {
     console.error('❌ Error deleting listing:', error);
-    return res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to delete listing',
       error: error.message
     });
   }
 });
 
-// PATCH endpoints (keep existing)
+// PATCH endpoints
 app.patch('/api/pg/:id/publish', async (req, res) => {
   try {
     const listingId = req.params.id;
     const published = req.body.published;
     
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
     if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
@@ -643,7 +624,7 @@ app.patch('/api/pg/:id/publish', async (req, res) => {
       });
     }
     
-    return res.json({
+    res.json({
       success: true,
       message: `Listing ${published ? 'published' : 'unpublished'} successfully`,
       data: updatedListing
@@ -651,7 +632,7 @@ app.patch('/api/pg/:id/publish', async (req, res) => {
     
   } catch (error) {
     console.error('Error toggling publish:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Failed to update listing',
       error: error.message
@@ -664,8 +645,11 @@ app.patch('/api/pg/:id/feature', async (req, res) => {
     const listingId = req.params.id;
     const featured = req.body.featured;
     
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
     if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
@@ -691,7 +675,7 @@ app.patch('/api/pg/:id/feature', async (req, res) => {
       });
     }
     
-    return res.json({
+    res.json({
       success: true,
       message: `Listing ${featured ? 'featured' : 'unfeatured'} successfully`,
       data: updatedListing
@@ -699,7 +683,7 @@ app.patch('/api/pg/:id/feature', async (req, res) => {
     
   } catch (error) {
     console.error('Error toggling feature:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Failed to update listing',
       error: error.message
@@ -712,8 +696,11 @@ app.patch('/api/pg/:id/verify', async (req, res) => {
     const listingId = req.params.id;
     const verified = req.body.verified;
     
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
     if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
@@ -739,7 +726,7 @@ app.patch('/api/pg/:id/verify', async (req, res) => {
       });
     }
     
-    return res.json({
+    res.json({
       success: true,
       message: `Listing ${verified ? 'verified' : 'unverified'} successfully`,
       data: updatedListing
@@ -747,7 +734,7 @@ app.patch('/api/pg/:id/verify', async (req, res) => {
     
   } catch (error) {
     console.error('Error toggling verify:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Failed to update listing',
       error: error.message
@@ -758,8 +745,11 @@ app.patch('/api/pg/:id/verify', async (req, res) => {
 // Add sample data endpoint
 app.post('/api/pg/sample-data', async (req, res) => {
   try {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
     if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({
+      return res.status(503).json({
         success: false,
         message: 'Database not connected'
       });
@@ -812,7 +802,7 @@ app.post('/api/pg/sample-data', async (req, res) => {
       savedListings.push(saved);
     }
     
-    return res.json({
+    res.json({
       success: true,
       message: 'Sample data added successfully',
       count: savedListings.length,
@@ -821,8 +811,8 @@ app.post('/api/pg/sample-data', async (req, res) => {
     
   } catch (error) {
     console.error('❌ Error adding sample data:', error);
-    return res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: 'Failed to add sample data',
       error: error.message
     });
@@ -832,6 +822,9 @@ app.post('/api/pg/sample-data', async (req, res) => {
 // Search endpoint
 app.get('/api/search', async (req, res) => {
   try {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
     const { city, type, minPrice, maxPrice, amenities } = req.query;
     
     let query = {};
@@ -851,15 +844,16 @@ app.get('/api/search', async (req, res) => {
     
     const listings = await PGListing.find(query).sort({ featured: -1, rating: -1 });
     
-    return res.json({
+    res.json({
       success: true,
       count: listings.length,
-      data: listings
+      data: listings,
+      query: req.query
     });
     
   } catch (error) {
     console.error('❌ Search error:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Search failed',
       error: error.message
@@ -870,6 +864,9 @@ app.get('/api/search', async (req, res) => {
 // Stats endpoint
 app.get('/api/stats', async (req, res) => {
   try {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', '*');
+    
     if (mongoose.connection.readyState !== 1) {
       return res.json({
         success: true,
@@ -901,7 +898,7 @@ app.get('/api/stats', async (req, res) => {
     
     const avgPrice = avgPriceResult.length > 0 ? Math.round(avgPriceResult[0].avgPrice) : 0;
     
-    return res.json({
+    res.json({
       success: true,
       data: {
         totalPGs,
@@ -911,13 +908,17 @@ app.get('/api/stats', async (req, res) => {
         featuredPGs,
         verifiedPGs,
         avgPrice,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
+        cors: {
+          origin: req.headers.origin || 'Direct',
+          allowed: true
+        }
       }
     });
     
   } catch (error) {
     console.error('❌ Stats error:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: 'Failed to get stats',
       error: error.message
@@ -925,21 +926,58 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// ================ ERROR HANDLERS ================
-app.use((err, req, res, next) => {
-  console.error('🚨 Global Error Handler:', err.message);
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+  console.log('🔬 CORS Test Request:', {
+    origin: req.headers.origin,
+    referer: req.headers.referer,
+    method: req.method,
+    url: req.url
+  });
   
-  return res.status(err.status || 500).json({
-    success: false,
-    message: 'Internal server error',
-    error: err.message
+  res.json({
+    success: true,
+    message: 'CORS is working!',
+    requestDetails: {
+      origin: req.headers.origin || 'No Origin',
+      referer: req.headers.referer || 'No Referer',
+      timestamp: new Date().toISOString(),
+      clientIP: req.ip
+    },
+    corsHeaders: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400'
+    }
   });
 });
 
+// ================ ERROR HANDLERS ================
+app.use((err, req, res, next) => {
+  console.error('🚨 Global Error Handler:', err.message);
+  console.error('Error Stack:', err.stack);
+  
+  // Set CORS headers even for errors
+  res.header('Access-Control-Allow-Origin', '*');
+  
+  res.status(err.status || 500).json({
+    success: false,
+    message: 'Internal server error',
+    error: err.message,
+    cors: 'Enabled'
+  });
+});
+
+// 404 handler
 app.all('*', (req, res) => {
   console.log(`❌ 404: ${req.method} ${req.originalUrl}`);
+  console.log('Origin:', req.headers.origin || 'Direct');
   
-  return res.status(404).json({
+  // Set CORS headers
+  res.header('Access-Control-Allow-Origin', '*');
+  
+  res.status(404).json({
     success: false,
     error: 'Endpoint not found',
     path: req.originalUrl,
@@ -954,13 +992,11 @@ app.all('*', (req, res) => {
       'GET  /api/pg/:id',
       'PUT  /api/pg/:id',
       'DELETE /api/pg/:id',
-      'PATCH /api/pg/:id/publish',
-      'PATCH /api/pg/:id/feature',
-      'PATCH /api/pg/:id/verify',
-      'POST /api/pg/sample-data',
       'GET  /api/search',
-      'GET  /api/stats'
-    ]
+      'GET  /api/stats',
+      'GET  /api/cors-test'
+    ],
+    cors: 'Enabled for all origins'
   });
 });
 
@@ -968,29 +1004,37 @@ app.all('*', (req, res) => {
 const PORT = process.env.PORT || 5000;
 
 const server = app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on http://localhost:${PORT}`);
+  console.log('\n' + '='.repeat(60));
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 MongoDB Status: ${mongoose.connection.readyState === 1 ? '✅ Connected' : '❌ Disconnected'}`);
+  console.log(`🛡️ CORS Policy: All origins allowed (*)`);
+  console.log('='.repeat(60));
   
   console.log('\n📋 Available Endpoints:');
-  console.log(`  🏠 Home:      http://localhost:${PORT}/`);
-  console.log(`  ❤️  Health:    http://localhost:${PORT}/health`);
-  console.log(`  🧪 Test:      http://localhost:${PORT}/api/test`);
-  console.log(`  🔍 DB Test:   http://localhost:${PORT}/api/db-test`);
-  console.log(`  🏢 PG List:   http://localhost:${PORT}/api/pg`);
-  console.log(`  🔍 Search:    http://localhost:${PORT}/api/search?city=Chandigarh&type=boys`);
-  console.log(`  📊 Stats:     http://localhost:${PORT}/api/stats`);
-  console.log(`  📱 Frontend:  https://eassy-to-rent-startup.vercel.app`);
+  console.log(`  🏠 Home:        http://localhost:${PORT}/`);
+  console.log(`  ❤️  Health:      http://localhost:${PORT}/health`);
+  console.log(`  🧪 Test:        http://localhost:${PORT}/api/test`);
+  console.log(`  🔍 DB Test:     http://localhost:${PORT}/api/db-test`);
+  console.log(`  🛡️ CORS Test:   http://localhost:${PORT}/api/cors-test`);
+  console.log(`  🏢 PG List:     http://localhost:${PORT}/api/pg`);
+  console.log(`  🔍 Search:      http://localhost:${PORT}/api/search?city=Chandigarh&type=boys`);
+  console.log(`  📊 Stats:       http://localhost:${PORT}/api/stats`);
+  console.log(`  📱 Frontend:    https://eassy-to-rent-startup.vercel.app`);
+  console.log(`  🌐 Backend URL: https://eassy-to-rent-backend.onrender.com`);
+  console.log('\n' + '='.repeat(60));
 });
 
+// Graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\n👋 Shutting down...');
+  console.log('\n👋 Shutting down gracefully...');
+  
   server.close(() => {
     console.log('✅ HTTP server closed');
-  });
-  mongoose.connection.close(false, () => {
-    console.log('✅ MongoDB connection closed');
-    process.exit(0);
+    mongoose.connection.close(false, () => {
+      console.log('✅ MongoDB connection closed');
+      process.exit(0);
+    });
   });
 });
 
-module.exports = app; 
+module.exports = app;
