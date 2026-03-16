@@ -27,5 +27,6 @@ const sendEmail = async (options) => {
     return false;
   }
 };
+console.log('🔥🔥🔥 SEND EMAIL UTILITY IS BEING LOADED! 🔥🔥🔥');
 
 module.exports = sendEmail;
