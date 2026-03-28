@@ -24,13 +24,13 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 
-// ✅ CORS FIXED CONFIG
+// ✅ CORS CONFIG
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:5000',
   'https://eassy-to-rent-backend.onrender.com',
-  'https://www.easytorent.in' // ✅ FIXED
+  'https://www.easytorent.in'
 ];
 
 const corsOptions = {
@@ -68,17 +68,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ GLOBAL LIMITER (OK)
+// ✅ GLOBAL LIMITER
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
 });
 app.use(globalLimiter);
 
-// ✅ AUTH LIMITER (FIXED 🔥)
+// ✅ AUTH LIMITER (EXCEPT LOGIN 🔥)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100, // 🔥 increased
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -88,11 +88,13 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
-app.use('/api/auth', authLimiter);
+// 👉 Apply ONLY on register / verify
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/verify', authLimiter);
 
-// ✅ OPTIONAL OTP LIMITER (BEST PRACTICE)
+// ✅ OTP LIMITER (ONLY LOGIN 🔥)
 const otpLimiter = rateLimit({
-  windowMs: 60 * 1000,
+  windowMs: 60 * 1000, // 1 minute
   max: 3,
   message: {
     success: false,
@@ -100,7 +102,7 @@ const otpLimiter = rateLimit({
   }
 });
 
-// Apply only on login (OTP route)
+// 👉 Apply only on login
 app.use('/api/auth/login', otpLimiter);
 
 // Health routes
@@ -142,7 +144,6 @@ process.on('uncaughtException', (err) => {
 });
 
 module.exports = app;
-
 
 
 
