@@ -13,6 +13,10 @@ const logger = require('./utils/logger');
 
 const app = express();
 
+// 🔥 IMPORTANT: Trust proxy headers (for correct IP when behind reverse proxy like Render, Heroku, Nginx)
+// This is critical for rate limiting and security logging to get real client IP
+app.set('trust proxy', 1);
+
 // Database
 connectDB();
 
@@ -78,11 +82,15 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Basic request logger
+// Basic request logger with real client IP
 app.use((req, res, next) => {
+  // Get real client IP (works with trust proxy)
+  const clientIp = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+  
   logger.http(`${req.method} ${req.originalUrl}`, {
     origin: req.headers.origin,
-    ip: req.ip,
+    ip: clientIp,
+    userAgent: req.headers['user-agent'],
   });
   next();
 });
@@ -95,6 +103,10 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
   message: 'Too many requests from this IP, please try again after 15 minutes',
   skip: (req) => req.path.startsWith('/health') || req.path === '/', // Skip rate limiting for health checks
+  keyGenerator: (req) => {
+    // Use real client IP when behind proxy
+    return req.ip || req.connection.remoteAddress;
+  },
 });
 
 app.use(globalLimiter);
@@ -107,6 +119,10 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: 'Too many authentication attempts, please try again after 15 minutes', data: {} },
   skipSuccessfulRequests: true, // Don't count successful requests
+  keyGenerator: (req) => {
+    // Use real client IP when behind proxy
+    return req.ip || req.connection.remoteAddress;
+  },
 });
 
 // Apply auth limiter to auth routes
@@ -114,6 +130,9 @@ app.use('/api/auth', authLimiter);
 
 // Health / root endpoints (public, no rate limiting)
 app.get('/', (req, res) => {
+  // Get real client IP for debugging
+  const clientIp = req.ip || req.connection.remoteAddress;
+  
   res.json({
     success: true,
     message: 'PG Finder API',
@@ -123,6 +142,10 @@ app.get('/', (req, res) => {
       cors: {
         enabled: true,
         allowedOrigins: allowedOrigins,
+      },
+      server: {
+        trustProxy: app.get('trust proxy'),
+        clientIp: clientIp,
       },
     },
   });
@@ -137,6 +160,7 @@ app.get('/health', (req, res) => {
       timestamp: new Date().toISOString(),
       database: 'connected',
       cors: 'enabled',
+      memory: process.memoryUsage(),
     },
   });
 });
@@ -165,10 +189,18 @@ process.on('uncaughtException', (err) => {
   // Don't crash the server, just log
 });
 
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, closing server...');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, closing server...');
+  process.exit(0);
+});
+
 module.exports = app;
-
-
-
 
 
 

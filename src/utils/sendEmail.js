@@ -37,7 +37,6 @@ const logger = require('./logger');
 
 const sendEmail = async (options) => {
   try {
-    // 🔥 Correct SMTP configuration (NO fallback mistakes)
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
       port: 465,
@@ -46,9 +45,11 @@ const sendEmail = async (options) => {
         user: process.env.SMTP_EMAIL,
         pass: process.env.SMTP_PASSWORD,
       },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
     });
 
-    // 🔍 Debug (optional but useful)
     console.log("SMTP USER:", process.env.SMTP_EMAIL ? "Loaded ✅" : "Missing ❌");
     console.log("SMTP PASS:", process.env.SMTP_PASSWORD ? "Loaded ✅" : "Missing ❌");
 
@@ -62,15 +63,15 @@ const sendEmail = async (options) => {
 
     const info = await transporter.sendMail(mailOptions);
 
-    console.log("✅ Email sent:", info.response);
+    console.log("✅ Email sent:", info.messageId);
     logger.info(`✅ Email sent: ${info.messageId}`);
 
-    return true; // success
-  } catch (error) {
-    console.error("❌ EMAIL ERROR:", error); // FULL error print
-    logger.error(`❌ Send Email error: ${error.message}`);
+    return true;
 
-    return false; // fail
+  } catch (error) {
+    console.error("❌ EMAIL ERROR:", error.message);
+    logger.error(`❌ Send Email error: ${error.message}`);
+    return false;
   }
 };
 

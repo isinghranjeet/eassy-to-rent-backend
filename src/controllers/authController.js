@@ -275,6 +275,7 @@ exports.login = async (req, res, next) => {
 
     const text = `Your PG Finder login verification OTP is: ${otp}\n\nThis code will expire in 5 minutes.\n\nSecurity Tip: Never share this code with anyone.\n\nLogin Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}\n\nIf this wasn't you, please reset your password immediately.`;
 
+    // 🔥 Send email with proper check
     const isSent = await sendEmail({
       email: user.email,
       subject,
@@ -285,7 +286,7 @@ exports.login = async (req, res, next) => {
     if (!isSent) {
       return errorResponse(res, {
         statusCode: 500,
-        message: "Failed to send OTP email. Please try again.",
+        message: "Failed to send verification email. Please try again.",
       });
     }
 
@@ -824,6 +825,7 @@ exports.forgotPassword = async (req, res, next) => {
 
     const text = `Your PG Finder password reset OTP is: ${otp}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this password reset, please ignore this email.\n\nRequest Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}`;
 
+    // 🔥 Send email with proper check
     const isSent = await sendEmail({
       email: user.email,
       subject: '🔑 Password Reset OTP - PG Finder',
@@ -834,7 +836,7 @@ exports.forgotPassword = async (req, res, next) => {
     if (!isSent) {
       return errorResponse(res, {
         statusCode: 500,
-        message: "Failed to send OTP email. Please try again.",
+        message: "Failed to send password reset email. Please try again.",
       });
     }
 
