@@ -275,7 +275,7 @@ exports.login = async (req, res, next) => {
 
     const text = `Your PG Finder login verification OTP is: ${otp}\n\nThis code will expire in 5 minutes.\n\nSecurity Tip: Never share this code with anyone.\n\nLogin Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}\n\nIf this wasn't you, please reset your password immediately.`;
 
-    // 🔥 Send email with proper check
+    // Send email with proper check
     const isSent = await sendEmail({
       email: user.email,
       subject,
@@ -284,9 +284,19 @@ exports.login = async (req, res, next) => {
     });
 
     if (!isSent) {
+      console.error(`❌ Failed to send OTP email to: ${user.email}`);
+      
+      // In development, return OTP for testing
+      if (process.env.NODE_ENV === 'development') {
+        return errorResponse(res, {
+          statusCode: 500,
+          message: `Failed to send email. Testing OTP: ${otp}`,
+        });
+      }
+      
       return errorResponse(res, {
         statusCode: 500,
-        message: "Failed to send verification email. Please try again.",
+        message: "Failed to send verification email. Please try again or contact support.",
       });
     }
 
@@ -303,6 +313,7 @@ exports.login = async (req, res, next) => {
       data: responseData,
     });
   } catch (error) {
+    console.error('Login error:', error);
     return next(error);
   }
 };
@@ -825,7 +836,7 @@ exports.forgotPassword = async (req, res, next) => {
 
     const text = `Your PG Finder password reset OTP is: ${otp}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this password reset, please ignore this email.\n\nRequest Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}`;
 
-    // 🔥 Send email with proper check
+    // Send email with proper check
     const isSent = await sendEmail({
       email: user.email,
       subject: '🔑 Password Reset OTP - PG Finder',
@@ -834,6 +845,7 @@ exports.forgotPassword = async (req, res, next) => {
     });
 
     if (!isSent) {
+      console.error(`❌ Failed to send password reset email to: ${user.email}`);
       return errorResponse(res, {
         statusCode: 500,
         message: "Failed to send password reset email. Please try again.",
@@ -845,6 +857,7 @@ exports.forgotPassword = async (req, res, next) => {
       data: { email: rawEmail },
     });
   } catch (error) {
+    console.error('Forgot password error:', error);
     return next(error);
   }
 };

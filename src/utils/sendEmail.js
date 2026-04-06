@@ -32,26 +32,38 @@
 // module.exports = sendEmail;
 
 
+
+
+
+
+
+
+
+
+
+
+
 const nodemailer = require('nodemailer');
 const logger = require('./logger');
 
 const sendEmail = async (options) => {
   try {
+    console.log("EMAIL:", process.env.SMTP_EMAIL);
+    console.log("PASS:", process.env.SMTP_PASSWORD ? "Loaded ✅" : "Missing ❌");
+
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
+      port: 587,              // 🔥 CHANGE
+      secure: false,          // 🔥 CHANGE
       auth: {
         user: process.env.SMTP_EMAIL,
         pass: process.env.SMTP_PASSWORD,
       },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000,
     });
 
-    console.log("SMTP USER:", process.env.SMTP_EMAIL ? "Loaded ✅" : "Missing ❌");
-    console.log("SMTP PASS:", process.env.SMTP_PASSWORD ? "Loaded ✅" : "Missing ❌");
+    // 🔥 VERIFY CONNECTION (IMPORTANT)
+    await transporter.verify();
+    console.log("✅ SMTP Connected");
 
     const mailOptions = {
       from: `"PG Finder Admin" <${process.env.SMTP_EMAIL}>`,
@@ -69,7 +81,7 @@ const sendEmail = async (options) => {
     return true;
 
   } catch (error) {
-    console.error("❌ EMAIL ERROR:", error.message);
+    console.error("❌ FULL EMAIL ERROR:", error); // 🔥 full error print
     logger.error(`❌ Send Email error: ${error.message}`);
     return false;
   }
