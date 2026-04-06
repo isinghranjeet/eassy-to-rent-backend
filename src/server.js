@@ -91,26 +91,26 @@
 
 
 
-// src/server.js
 
-// ----------------------
-// 1️⃣ Load environment variables
-// ----------------------
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../.env') }); 
-// __dirname = current folder (src)
-// ../.env = parent folder
 
-// ----------------------
-// 2️⃣ Imports
-// ----------------------
-const app = require('./app');           // Express app
-const logger = require('./utils/logger'); // Logger module
+
+
+
+
+
+
+
+
+
+
+// server.js
+require('dotenv').config(); // load env variables
+
+const app = require('./app'); // your express app
 const mongoose = require('mongoose');
+const logger = require('./utils/logger'); // your custom logger
 
-// ----------------------
-// 3️⃣ Port helper
-// ----------------------
+// ─────────── Port Handling ───────────
 const parsePort = (port) => {
   const parsed = parseInt(port, 10);
   if (isNaN(parsed)) return 5000;
@@ -121,77 +121,69 @@ const parsePort = (port) => {
   return parsed;
 };
 
-// ----------------------
-// 4️⃣ Get port from env
-// ----------------------
 const PORT = parsePort(process.env.PORT || 5000);
-logger.info(`📋 Environment: ${process.env.NODE_ENV || 'development'}`);
-logger.info(`🔌 Attempting to use port: ${PORT}`);
 
-// ----------------------
-// 5️⃣ Graceful shutdown
-// ----------------------
-const shutdown = (signal, server) => {
-  logger.info(`📥 ${signal} received: shutting down gracefully`);
-  server.close(() => {
-    logger.info('🛑 HTTP server closed');
-    process.exit(0);
-  });
-  setTimeout(() => {
-    logger.error('⚠️ Forcefully shutting down');
+// ─────────── MongoDB Connection ───────────
+const connectDB = async () => {
+  if (!process.env.MONGO_URI) {
+    logger.error('❌ MONGO_URI is missing in environment variables');
     process.exit(1);
-  }, 10000);
+  }
+
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    logger.info('✅ MongoDB connected');
+  } catch (err) {
+    logger.error('❌ MongoDB connection failed:', err.message);
+    process.exit(1);
+  }
 };
 
-// ----------------------
-// 6️⃣ Start server function
-// ----------------------
+// ─────────── Server Startup ───────────
 const startServer = () => {
-  const server = app.listen(PORT)
-    .on('listening', () => logger.info(`✅ Server running on port ${PORT}`))
-    .on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        logger.error(`❌ Port ${PORT} in use! Trying next port`);
-        process.exit(1);
-      } else {
-        logger.error('❌ Server error:', err);
-        process.exit(1);
-      }
+  const server = app.listen(PORT, () => {
+    logger.info(`✅ Server running on port ${PORT}`);
+    logger.info(`📋 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+
+  // Graceful shutdown
+  const shutdown = (signal) => {
+    logger.info(`📥 ${signal} received: shutting down gracefully`);
+    server.close(() => {
+      logger.info('🛑 HTTP server closed');
+      mongoose.connection.close(false, () => {
+        logger.info('🛑 MongoDB connection closed');
+        process.exit(0);
+      });
     });
 
-  process.on('SIGINT', () => shutdown('SIGINT', server));
-  process.on('SIGTERM', () => shutdown('SIGTERM', server));
+    // Force shutdown after 10s
+    setTimeout(() => {
+      logger.error('⚠️ Forcefully shutting down');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+
   process.on('uncaughtException', (err) => {
     logger.error('❌ Uncaught Exception:', err);
-    shutdown('UNCAUGHT_EXCEPTION', server);
+    shutdown('UNCAUGHT_EXCEPTION');
   });
+
   process.on('unhandledRejection', (err) => {
     logger.error('❌ Unhandled Rejection:', err);
-    shutdown('UNHANDLED_REJECTION', server);
+    shutdown('UNHANDLED_REJECTION');
   });
 };
 
-// ----------------------
-// 7️⃣ MongoDB connection
-// ----------------------
-const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-  logger.error('[ERROR] MONGO_URI is missing in environment variables');
-  process.exit(1);
-}
-
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => {
-  logger.info('✅ Connected to MongoDB');
-  startServer(); // Mongo connected, now start server
-})
-.catch((err) => {
-  logger.error('❌ MongoDB connection error:', err);
-  process.exit(1);
+// ─────────── Init ───────────
+connectDB().then(() => {
+  startServer();
 });
 
 module.exports = app;
