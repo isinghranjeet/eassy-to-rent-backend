@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 
 const connectDB = require('./config/database');
 const pgRoutes = require('./routes/pg');
+
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
 const reviewRoutes = require('./routes/reviews');
@@ -104,14 +105,13 @@ const otpLimiter = rateLimit({
 app.use('/api/auth/login', otpLimiter);
 
 // Health routes
-app.get('/', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    message: 'API Running 🚀',
-    env: process.env.NODE_ENV
+    message: 'OK',
+    uptime: process.uptime(),
   });
 });
-
 app.get('/health', (req, res) => {
   res.json({
     success: true,
