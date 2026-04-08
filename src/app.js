@@ -15,8 +15,8 @@ const app = express();
 // 🔥 Trust proxy (IMPORTANT for Render)
 app.set('trust proxy', 1);
 
-// ❌ REMOVE DATABASE CONNECTION FROM HERE
-// connectDB(); ❌ DON'T DO THIS
+// ❌ DO NOT CONNECT DB HERE
+// connectDB(); ❌
 
 // 🔐 Security middleware
 app.use(
@@ -25,7 +25,7 @@ app.use(
   })
 );
 
-// ─────────── ✅ CORS CONFIG (FINAL FIX) ───────────
+// ─────────── ✅ CORS CONFIG (FINAL) ───────────
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -41,7 +41,7 @@ const corsOptions = {
 
     if (
       allowedOrigins.includes(origin) ||
-      origin.endsWith('easytorent.in')
+      (origin && origin.includes('easytorent.in'))
     ) {
       callback(null, true);
     } else {
@@ -103,6 +103,11 @@ const otpLimiter = rateLimit({
   },
 });
 app.use('/api/auth/login', otpLimiter);
+
+// ─────────── ✅ ROOT ROUTE (IMPORTANT FIX) ───────────
+app.get('/', (req, res) => {
+  res.send('🚀 Backend is running successfully');
+});
 
 // ─────────── HEALTH ROUTES ───────────
 app.get('/api/health', (req, res) => {
