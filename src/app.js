@@ -3,7 +3,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
-const connectDB = require('./config/database');
 const pgRoutes = require('./routes/pg');
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
@@ -16,8 +15,8 @@ const app = express();
 // 🔥 Trust proxy (IMPORTANT for Render)
 app.set('trust proxy', 1);
 
-// 🔥 Database connect
-connectDB();
+// ❌ REMOVE DATABASE CONNECTION FROM HERE
+// connectDB(); ❌ DON'T DO THIS
 
 // 🔐 Security middleware
 app.use(
@@ -33,14 +32,13 @@ const allowedOrigins = [
   'http://localhost:5000',
   'https://eassy-to-rent-backend.onrender.com',
   'https://www.easytorent.in',
-  'https://easytorent.in', // ✅ FIX ADDED
+  'https://easytorent.in',
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
 
-    // ✅ Allow exact matches + subdomains
     if (
       allowedOrigins.includes(origin) ||
       origin.endsWith('easytorent.in')
