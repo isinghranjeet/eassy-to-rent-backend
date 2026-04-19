@@ -16,7 +16,7 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    required: false  // ✅ Changed to false - Google login users may not have password
   },
   phone: {
     type: String,
@@ -52,6 +52,23 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  
+  // ✅ GOOGLE LOGIN FIELDS (ADD THESE)
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true,  // Allows multiple null values
+    default: null
+  },
+  avatar: {
+    type: String,
+    default: ''
+  },
+  isSocialLogin: {
+    type: Boolean,
+    default: false
+  },
+  
   wishlist: [
     {
       type: mongoose.Schema.Types.ObjectId,
@@ -74,11 +91,12 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-// Hash password & update timestamps on save
+// Hash password & update timestamps on save (only if password exists)
 userSchema.pre('save', async function (next) {
   this.updatedAt = Date.now();
 
-  if (!this.isModified('password')) {
+  // Only hash password if it exists and is modified
+  if (!this.isModified('password') || !this.password) {
     return next();
   }
 
@@ -92,11 +110,14 @@ userSchema.pre('save', async function (next) {
 userSchema.methods.toJSON = function() {
   const user = this.toObject();
   delete user.password;
+  delete user.otp;
+  delete user.otpExpires;
   return user;
 };
 
-// Compare password method
+// Compare password method (only if user has password)
 userSchema.methods.comparePassword = async function(candidatePassword) {
+  if (!this.password) return false;
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

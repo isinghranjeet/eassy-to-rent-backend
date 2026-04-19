@@ -3,6 +3,7 @@ const { generateToken } = require('../utils/generateToken');
 const { successResponse, errorResponse } = require('../utils/response');
 const { sendEmail, sendOtpEmail, sendTestEmail } = require('../utils/sendEmail');
 const crypto = require('crypto');
+const { OAuth2Client } = require('google-auth-library');
 
 // Rate limiting store (use Redis in production)
 const loginAttempts = new Map();
@@ -223,21 +224,16 @@ exports.login = async (req, res, next) => {
       </head>
       <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
         <div style="max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-          <!-- Header -->
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;">
             <div style="font-size: 48px; margin-bottom: 10px;">🔐</div>
             <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 600;">Login Verification Required</h1>
             <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0; font-size: 16px;">Secure access to your account</p>
           </div>
-          
-          <!-- Content -->
           <div style="padding: 40px 30px;">
             <div style="text-align: center; margin-bottom: 30px;">
               <p style="color: #4a5568; font-size: 16px; line-height: 1.6;">Hello <strong style="color: #667eea;">${user.name}</strong>,</p>
               <p style="color: #4a5568; font-size: 16px; line-height: 1.6;">We received a login request for your PG Finder account. Use the verification code below to complete your login.</p>
             </div>
-            
-            <!-- OTP Box -->
             <div style="background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); padding: 30px; border-radius: 15px; text-align: center; margin: 20px 0;">
               <p style="color: #4a5568; font-size: 14px; margin-bottom: 15px; letter-spacing: 1px;">YOUR VERIFICATION CODE</p>
               <div style="background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
@@ -245,25 +241,19 @@ exports.login = async (req, res, next) => {
               </div>
               <p style="color: #718096; font-size: 12px; margin-top: 15px;">Code expires in <strong style="color: #e53e3e;">5 minutes</strong></p>
             </div>
-            
-            <!-- Security Information -->
             <div style="background: #fef5e7; border-left: 4px solid #ed8936; padding: 15px; border-radius: 8px; margin: 20px 0;">
               <p style="margin: 0; color: #975a16; font-size: 14px; display: flex; align-items: center;">
                 <span style="font-size: 20px; margin-right: 10px;">⚠️</span>
-                <strong>Security Tip:</strong> Never share this code with anyone. Our support team will never ask for this code.
+                <strong>Security Tip:</strong> Never share this code with anyone.
               </p>
             </div>
-            
             <div style="background: #f0f9ff; border-radius: 8px; padding: 15px; margin-top: 20px;">
               <p style="margin: 0; color: #2c5282; font-size: 13px; display: flex; align-items: center;">
                 <span style="font-size: 18px; margin-right: 10px;">📍</span>
                 Login details: <strong>IP Address:</strong> ${req.ip} | <strong>Time:</strong> ${new Date().toLocaleString()}
               </p>
-              <p style="margin: 10px 0 0; color: #2c5282; font-size: 12px;">If this wasn't you, please <a href="#" style="color: #667eea;">reset your password immediately</a>.</p>
             </div>
           </div>
-          
-          <!-- Footer -->
           <div style="background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
             <p style="color: #718096; font-size: 12px; margin: 0;">This is an automated message from PG Finder. Please do not reply to this email.</p>
             <p style="color: #a0aec0; font-size: 11px; margin: 10px 0 0;">&copy; 2024 PG Finder. All rights reserved.</p>
@@ -275,7 +265,6 @@ exports.login = async (req, res, next) => {
 
     const text = `Your PG Finder login verification OTP is: ${otp}\n\nThis code will expire in 5 minutes.\n\nSecurity Tip: Never share this code with anyone.\n\nLogin Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}\n\nIf this wasn't you, please reset your password immediately.`;
 
-    // Send email with proper check
     const isSent = await sendEmail({
       email: user.email,
       subject,
@@ -286,7 +275,6 @@ exports.login = async (req, res, next) => {
     if (!isSent) {
       console.error(`❌ Failed to send OTP email to: ${user.email}`);
       
-      // In development, return OTP for testing
       if (process.env.NODE_ENV === 'development') {
         return errorResponse(res, {
           statusCode: 500,
@@ -302,7 +290,6 @@ exports.login = async (req, res, next) => {
 
     const responseData = { requireOtp: true, email: user.email };
     
-    // Only show debug OTP in development environment
     if (process.env.NODE_ENV === 'development') {
       responseData.debugOtp = otp;
     }
@@ -341,6 +328,7 @@ exports.getProfile = async (req, res, next) => {
         role: user.role,
         phone: user.phone,
         status: user.status,
+        profileImage: user.profileImage,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
         lastLoginIP: user.lastLoginIP,
@@ -365,7 +353,6 @@ exports.updateProfile = async (req, res, next) => {
       });
     }
 
-    // Update fields with validation
     if (req.body.name) user.name = req.body.name.trim();
     
     if (req.body.email) {
@@ -379,7 +366,6 @@ exports.updateProfile = async (req, res, next) => {
       
       const newEmail = req.body.email.toLowerCase().trim();
       
-      // Check if email is already in use by another user
       const existingUser = await User.findOne({ email: newEmail });
       if (existingUser && existingUser._id.toString() !== user._id.toString()) {
         return errorResponse(res, {
@@ -392,8 +378,9 @@ exports.updateProfile = async (req, res, next) => {
     }
     
     if (req.body.phone) user.phone = req.body.phone.trim();
+    if (req.body.profileImage) user.profileImage = req.body.profileImage;
+    if (req.body.bio) user.bio = req.body.bio;
 
-    // If password is provided, validate and update
     if (req.body.password) {
       const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
       if (!passwordRegex.test(req.body.password)) {
@@ -406,8 +393,6 @@ exports.updateProfile = async (req, res, next) => {
     }
 
     const updatedUser = await user.save();
-
-    // Generate new token if email was changed
     const token = generateToken(updatedUser._id, updatedUser.role);
 
     return successResponse(res, {
@@ -418,6 +403,7 @@ exports.updateProfile = async (req, res, next) => {
         email: updatedUser.email,
         role: updatedUser.role,
         phone: updatedUser.phone,
+        profileImage: updatedUser.profileImage,
         token,
       },
     });
@@ -428,10 +414,9 @@ exports.updateProfile = async (req, res, next) => {
 
 // @desc    Create default admin user
 // @route   POST /api/auth/init-admin
-// @access  Public (only for initial setup - disable in production)
+// @access  Public
 exports.createDefaultAdmin = async (req, res, next) => {
   try {
-    // Check if admin already exists
     const adminExists = await User.findOne({ role: 'admin' });
     if (adminExists) {
       return errorResponse(res, {
@@ -444,7 +429,6 @@ exports.createDefaultAdmin = async (req, res, next) => {
       });
     }
 
-    // Validate admin credentials exist in environment
     if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
       return errorResponse(res, {
         statusCode: 500,
@@ -452,7 +436,6 @@ exports.createDefaultAdmin = async (req, res, next) => {
       });
     }
 
-    // Create admin user
     const admin = await User.create({
       name: 'Admin User',
       email: process.env.ADMIN_EMAIL,
@@ -461,7 +444,6 @@ exports.createDefaultAdmin = async (req, res, next) => {
       status: 'active',
     });
 
-    // Generate token
     const token = generateToken(admin._id, admin.role);
 
     return successResponse(res, {
@@ -482,7 +464,7 @@ exports.createDefaultAdmin = async (req, res, next) => {
 
 // @desc    Reset admin password
 // @route   POST /api/auth/reset-admin
-// @access  Public (one-time setup helper)
+// @access  Public
 exports.resetAdmin = async (req, res, next) => {
   try {
     const adminEmail = process.env.ADMIN_EMAIL;
@@ -520,7 +502,7 @@ exports.resetAdmin = async (req, res, next) => {
 // @access  Private/Admin
 exports.getUsers = async (req, res, next) => {
   try {
-    const users = await User.find({}).select('-password');
+    const users = await User.find({}).select('-password -otp -otpExpires');
     return successResponse(res, {
       message: 'Users fetched successfully',
       data: {
@@ -533,7 +515,7 @@ exports.getUsers = async (req, res, next) => {
   }
 };
 
-// @desc    Debug endpoint to check authentication
+// @desc    Debug endpoint
 // @route   GET /api/auth/debug
 // @access  Public
 exports.debugAuth = (req, res) =>
@@ -550,7 +532,7 @@ exports.debugAuth = (req, res) =>
 // @access  Private/Admin
 exports.getUserById = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
+    const user = await User.findById(req.params.id).select('-password -otp -otpExpires');
 
     if (!user) {
       return errorResponse(res, {
@@ -582,7 +564,6 @@ exports.deleteUser = async (req, res, next) => {
       });
     }
 
-    // Prevent admin from deleting themselves
     if (user._id.toString() === req.user._id.toString()) {
       return errorResponse(res, {
         statusCode: 400,
@@ -590,7 +571,6 @@ exports.deleteUser = async (req, res, next) => {
       });
     }
 
-    // Prevent deleting other admins
     if (user.role === 'admin') {
       return errorResponse(res, {
         statusCode: 400,
@@ -632,7 +612,6 @@ exports.updateUserStatus = async (req, res, next) => {
       });
     }
 
-    // Prevent admin from changing their own status
     if (user._id.toString() === req.user._id.toString()) {
       return errorResponse(res, {
         statusCode: 400,
@@ -681,7 +660,6 @@ exports.verifyLoginOtp = async (req, res, next) => {
       });
     }
 
-    // Hash the provided OTP for comparison
     const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
 
     if (user.otp !== hashedOtp) {
@@ -698,14 +676,12 @@ exports.verifyLoginOtp = async (req, res, next) => {
       });
     }
 
-    // OTP is valid - clear it and update login info
     user.otp = null;
     user.otpExpires = null;
     user.lastLogin = new Date();
     user.lastLoginIP = req.ip;
     await user.save();
 
-    // Generate token
     const token = generateToken(user._id, user.role);
 
     return successResponse(res, {
@@ -716,6 +692,7 @@ exports.verifyLoginOtp = async (req, res, next) => {
         email: user.email,
         role: user.role,
         phone: user.phone,
+        profileImage: user.profileImage,
         token,
         lastLogin: user.lastLogin,
       },
@@ -736,7 +713,6 @@ exports.forgotPassword = async (req, res, next) => {
       return errorResponse(res, { statusCode: 400, message: 'Please provide your email address' });
     }
 
-    // Rate limiting for password reset requests
     const resetKey = `reset_${rawEmail}`;
     const lastResetRequest = otpRequests.get(resetKey);
     if (lastResetRequest && Date.now() - lastResetRequest < 120000) {
@@ -748,14 +724,12 @@ exports.forgotPassword = async (req, res, next) => {
 
     const user = await User.findOne({ email: rawEmail });
     if (!user) {
-      // Don't reveal if email exists or not for security
       return successResponse(res, {
         message: 'If an account exists with this email, you will receive a password reset OTP.',
         data: { email: rawEmail },
       });
     }
 
-    // Check if account is active
     if (user.status === 'suspended') {
       return errorResponse(res, {
         statusCode: 403,
@@ -763,89 +737,43 @@ exports.forgotPassword = async (req, res, next) => {
       });
     }
 
-    // Generate secure OTP
     const otp = crypto.randomInt(100000, 999999).toString();
     const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
     user.otp = hashedOtp;
-    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    user.otpExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    // Update rate limiting
     otpRequests.set(resetKey, Date.now());
     clearRateLimit(resetKey);
 
-    // Attractive password reset email
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Password Reset OTP</title>
       </head>
-      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-        <div style="max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-          <!-- Header -->
-          <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); padding: 40px 30px; text-align: center;">
-            <div style="font-size: 48px; margin-bottom: 10px;">🔑</div>
-            <h1 style="color: white; margin: 0; font-size: 28px; font-weight: 600;">Reset Your Password</h1>
-            <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0; font-size: 16px;">Secure password recovery</p>
+      <body style="font-family: Arial, sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2>Reset Your Password</h2>
+          <p>Hello ${user.name},</p>
+          <p>We received a request to reset your password. Use the following OTP:</p>
+          <div style="background: #f4f4f4; padding: 15px; text-align: center; font-size: 24px; letter-spacing: 5px;">
+            <strong>${otp}</strong>
           </div>
-          
-          <!-- Content -->
-          <div style="padding: 40px 30px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <p style="color: #4a5568; font-size: 16px; line-height: 1.6;">Hello <strong style="color: #f5576c;">${user.name}</strong>,</p>
-              <p style="color: #4a5568; font-size: 16px; line-height: 1.6;">We received a request to reset your password. Use the verification code below to proceed.</p>
-            </div>
-            
-            <!-- OTP Box -->
-            <div style="background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%); padding: 30px; border-radius: 15px; text-align: center; margin: 20px 0;">
-              <p style="color: #c53030; font-size: 14px; margin-bottom: 15px; letter-spacing: 1px;">PASSWORD RESET CODE</p>
-              <div style="background: white; padding: 20px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                <span style="font-size: 48px; font-weight: bold; letter-spacing: 8px; color: #f5576c; font-family: monospace;">${otp}</span>
-              </div>
-              <p style="color: #718096; font-size: 12px; margin-top: 15px;">Code expires in <strong style="color: #e53e3e;">10 minutes</strong></p>
-            </div>
-            
-            <!-- Security Information -->
-            <div style="background: #fff5f0; border-left: 4px solid #ed8936; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <p style="margin: 0; color: #975a16; font-size: 14px; display: flex; align-items: center;">
-                <span style="font-size: 20px; margin-right: 10px;">⚠️</span>
-                <strong>Important:</strong> If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
-              </p>
-            </div>
-            
-            <div style="background: #fef5e7; border-radius: 8px; padding: 15px; margin-top: 20px;">
-              <p style="margin: 0; color: #975a16; font-size: 13px; display: flex; align-items: center;">
-                <span style="font-size: 18px; margin-right: 10px;">🕒</span>
-                This request was made from IP: ${req.ip} at ${new Date().toLocaleString()}
-              </p>
-            </div>
-          </div>
-          
-          <!-- Footer -->
-          <div style="background: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;">
-            <p style="color: #718096; font-size: 12px; margin: 0;">This is an automated message from PG Finder. Please do not reply to this email.</p>
-            <p style="color: #a0aec0; font-size: 11px; margin: 10px 0 0;">&copy; 2024 PG Finder. All rights reserved.</p>
-          </div>
+          <p>This OTP is valid for 10 minutes.</p>
+          <p>If you didn't request this, please ignore this email.</p>
         </div>
       </body>
       </html>
     `;
 
-    const text = `Your PG Finder password reset OTP is: ${otp}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this password reset, please ignore this email.\n\nRequest Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}`;
-
-    // Send email with proper check
     const isSent = await sendEmail({
       email: user.email,
       subject: '🔑 Password Reset OTP - PG Finder',
       html,
-      text,
     });
 
     if (!isSent) {
-      console.error(`❌ Failed to send password reset email to: ${user.email}`);
       return errorResponse(res, {
         statusCode: 500,
         message: "Failed to send password reset email. Please try again.",
@@ -875,12 +803,11 @@ exports.resetPassword = async (req, res, next) => {
       return errorResponse(res, { statusCode: 400, message: 'Please provide email, OTP, and new password' });
     }
 
-    // Enhanced password validation
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     if (!passwordRegex.test(newPassword)) {
       return errorResponse(res, {
         statusCode: 400,
-        message: 'Password must be at least 8 characters and contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+        message: 'Password must be at least 8 characters and contain uppercase, lowercase, number, and special character',
       });
     }
 
@@ -889,7 +816,6 @@ exports.resetPassword = async (req, res, next) => {
       return errorResponse(res, { statusCode: 404, message: 'User not found' });
     }
 
-    // Hash OTP for comparison
     const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
 
     if (user.otp !== hashedOtp) {
@@ -900,7 +826,6 @@ exports.resetPassword = async (req, res, next) => {
       return errorResponse(res, { statusCode: 401, message: 'Verification code has expired. Please request a new one.' });
     }
 
-    // Check if new password is different from old one
     const isSamePassword = await user.comparePassword(newPassword);
     if (isSamePassword) {
       return errorResponse(res, {
@@ -909,7 +834,6 @@ exports.resetPassword = async (req, res, next) => {
       });
     }
 
-    // Update password
     user.password = newPassword;
     user.otp = null;
     user.otpExpires = null;
@@ -924,17 +848,93 @@ exports.resetPassword = async (req, res, next) => {
   }
 };
 
-// @desc    Logout user (optional)
+// @desc    Logout user
 // @route   POST /api/auth/logout
 // @access  Private
 exports.logout = async (req, res, next) => {
   try {
-    // In a token-based system, logout is handled client-side by removing the token
-    // This endpoint can be used for any additional cleanup
     return successResponse(res, {
       message: 'Logged out successfully',
     });
   } catch (error) {
     return next(error);
+  }
+};
+
+// ========== GOOGLE LOGIN ==========
+
+// @desc    Google Login via Token
+// @route   POST /api/auth/google-token
+// @access  Public
+exports.googleTokenLogin = async (req, res, next) => {
+  try {
+    const { credential } = req.body;
+    
+    if (!credential) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Google token is required'
+      });
+    }
+    
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId } = payload;
+    
+    let user = await User.findOne({ googleId });
+    
+    if (!user) {
+      user = await User.findOne({ email });
+      
+      if (user) {
+        user.googleId = googleId;
+        user.profileImage = picture;
+        user.isSocialLogin = true;
+        await user.save();
+      } else {
+        user = await User.create({
+          googleId,
+          name: name,
+          email: email,
+          profileImage: picture,
+          isSocialLogin: true,
+          lastLogin: new Date(),
+          status: 'active',
+          password: crypto.randomBytes(20).toString('hex')
+        });
+      }
+    } else {
+      user.lastLogin = new Date();
+      await user.save();
+    }
+    
+    const token = generateToken(user._id, user.role);
+    
+    return successResponse(res, {
+      message: 'Google login successful',
+      data: {
+        token,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          avatar: user.profileImage,
+          phone: user.phone
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Google token login error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: 'Google login failed: ' + error.message
+    });
   }
 };

@@ -24,6 +24,10 @@ router.post('/reset-password', authController.resetPassword);
 // Debug route
 router.get('/debug', authController.debugAuth);
 
+// ================= GOOGLE LOGIN ROUTES =================
+
+// Google token exchange (Frontend -> Backend)
+router.post('/google-token', authController.googleTokenLogin);
 
 // ================= PROTECTED ROUTES =================
 
@@ -32,7 +36,6 @@ router.get('/profile', protect, authController.getProfile);
 
 // Update profile
 router.put('/profile', protect, authController.updateProfile);
-
 
 // ================= ADMIN ROUTES =================
 
@@ -47,7 +50,6 @@ router.delete('/users/:id', protect, adminOnly, authController.deleteUser);
 
 // Update user status
 router.put('/users/:id/status', protect, adminOnly, authController.updateUserStatus);
-
 
 // ================= DEV ONLY ROUTES =================
 
