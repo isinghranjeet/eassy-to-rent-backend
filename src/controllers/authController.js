@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const { generateToken } = require('../utils/generateToken');
 const { successResponse, errorResponse } = require('../utils/response');
-const sendEmail = require('../utils/sendEmail');
+const { sendEmail, sendOtpEmail, sendTestEmail } = require('../utils/sendEmail');
 const crypto = require('crypto');
 
 // Rate limiting store (use Redis in production)

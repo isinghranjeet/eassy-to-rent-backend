@@ -1,9 +1,43 @@
+const mongoose = require('mongoose');
 const PGListing = require('../models/PGListing');
 const User = require('../models/User');
 const Review = require('../models/Review');
 const logger = require('../utils/logger');
 const { successResponse, errorResponse } = require('../utils/response');
 const { uploadImage, uploadGalleryImages } = require('../utils/cloudinary');
+
+// Helper function to calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Helper function to get coordinates by city (AUTO-COORDINATES)
+const getCoordinatesByCity = (city) => {
+  const cityCoordinates = {
+    'chandigarh': { lat: 30.7333, lng: 76.7794 },
+    'mohali': { lat: 30.7046, lng: 76.7179 },
+    'panchkula': { lat: 30.6942, lng: 76.8606 },
+    'kharar': { lat: 30.7463, lng: 76.6468 },
+    'ropar': { lat: 30.9686, lng: 76.5271 },
+    'zirakpur': { lat: 30.6442, lng: 76.8186 },
+    'noida': { lat: 28.5355, lng: 77.3910 },
+    'faridabad': { lat: 28.4089, lng: 77.3178 },
+    'delhi': { lat: 28.7041, lng: 77.1025 },
+    'gurgaon': { lat: 28.4595, lng: 77.0266 },
+    'lucknow': { lat: 26.8467, lng: 80.9462 },
+    'jaipur': { lat: 26.9124, lng: 75.7873 },
+  };
+  
+  const cityKey = city?.toLowerCase().trim();
+  return cityCoordinates[cityKey] || { lat: 30.7333, lng: 76.7794 };
+};
 
 // @desc    Get all PG listings
 // @route   GET /api/pg
@@ -55,18 +89,46 @@ exports.getPGListings = async (req, res, next) => {
       ];
     }
 
-    // Calculate pagination
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // Execute query
-    const listings = await PGListing.find(query)
+    let listings = await PGListing.find(query)
       .sort(sort)
       .skip(skip)
       .limit(limitNum);
 
-    // Get total count for pagination
+    // Ensure coordinates are present
+    listings = listings.map(listing => {
+      const listingObj = listing.toObject();
+      
+      let hasValidCoords = false;
+      
+      if (listingObj.coordinates && 
+          listingObj.coordinates.lat && 
+          listingObj.coordinates.lat !== 0 && 
+          listingObj.coordinates.lng && 
+          listingObj.coordinates.lng !== 0) {
+        hasValidCoords = true;
+      }
+      
+      if (!hasValidCoords && listingObj.location?.coordinates && listingObj.location.coordinates.length === 2) {
+        const lat = listingObj.location.coordinates[1];
+        const lng = listingObj.location.coordinates[0];
+        if (lat && lng && lat !== 0 && lng !== 0) {
+          listingObj.coordinates = { lat, lng };
+          hasValidCoords = true;
+        }
+      }
+      
+      if (!hasValidCoords) {
+        const defaultCoords = getCoordinatesByCity(listingObj.city);
+        listingObj.coordinates = defaultCoords;
+      }
+      
+      return listingObj;
+    });
+
     const total = await PGListing.countDocuments(query);
 
     return successResponse(res, {
@@ -81,7 +143,12 @@ exports.getPGListings = async (req, res, next) => {
       },
     });
   } catch (error) {
-    return next(error);
+    console.error('Get PG listings error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: 'Failed to fetch PG listings',
+      errors: error.message
+    });
   }
 };
 
@@ -90,7 +157,7 @@ exports.getPGListings = async (req, res, next) => {
 // @access  Public
 exports.getPGListing = async (req, res, next) => {
   try {
-    const listing = await PGListing.findById(req.params.id);
+    let listing = await PGListing.findById(req.params.id);
     
     if (!listing) {
       return errorResponse(res, {
@@ -98,9 +165,30 @@ exports.getPGListing = async (req, res, next) => {
         message: 'PG listing not found',
       });
     }
+    
+    const listingObj = listing.toObject();
+    if (!listingObj.coordinates || listingObj.coordinates.lat === 0) {
+      const defaultCoords = getCoordinatesByCity(listingObj.city);
+      listingObj.coordinates = defaultCoords;
+    }
+    
+    // Add demand meter data
+    const views = listing.views || 0;
+    const weeklyBookings = listing.weeklyBookings || 0;
+    
+    let demandLevel = 'Low';
+    if (views > 200 || weeklyBookings > 10) demandLevel = 'High';
+    if (views > 500 || weeklyBookings > 20) demandLevel = 'Very High';
+    
+    listingObj.demandMeter = {
+      views,
+      weeklyBookings,
+      demandLevel
+    };
+    
     return successResponse(res, {
       message: 'PG listing fetched successfully',
-      data: listing,
+      data: listingObj,
     });
   } catch (error) {
     if (error.name === 'CastError') {
@@ -109,6 +197,36 @@ exports.getPGListing = async (req, res, next) => {
         message: 'Invalid listing ID',
       });
     }
+    return next(error);
+  }
+};
+
+// @desc    Get PG by slug
+// @route   GET /api/pg/slug/:slug
+// @access  Public
+exports.getPGBySlug = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+    let listing = await PGListing.findOne({ slug });
+    
+    if (!listing) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'PG listing not found',
+      });
+    }
+    
+    const listingObj = listing.toObject();
+    if (!listingObj.coordinates || listingObj.coordinates.lat === 0) {
+      const defaultCoords = getCoordinatesByCity(listingObj.city);
+      listingObj.coordinates = defaultCoords;
+    }
+    
+    return successResponse(res, {
+      message: 'PG listing fetched successfully',
+      data: listingObj,
+    });
+  } catch (error) {
     return next(error);
   }
 };
@@ -122,10 +240,23 @@ exports.createPGListing = async (req, res, next) => {
       user: req.user && req.user.email,
     });
 
+    const { name, city, ownerEmail } = req.body;
+    const existingPG = await PGListing.findOne({
+      name: { $regex: new RegExp(`^${name}$`, 'i') },
+      city: { $regex: new RegExp(`^${city}$`, 'i') },
+      ownerEmail: ownerEmail || req.user.email
+    });
+
+    if (existingPG) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'This PG listing already exists! Duplicate entries are not allowed.',
+      });
+    }
+
     const rawImages = Array.isArray(req.body.images) ? req.body.images : [];
     const rawGallery = Array.isArray(req.body.gallery) ? req.body.gallery : [];
 
-    // Upload main image (first) and gallery to Cloudinary
     const [primaryImageUrl, galleryUrls] = await Promise.all([
       rawImages.length > 0 ? uploadImage(rawImages[0]) : null,
       uploadGalleryImages(rawGallery),
@@ -136,16 +267,30 @@ exports.createPGListing = async (req, res, next) => {
       images.push(primaryImageUrl);
     }
 
-    // Add default values if not provided
+    const cityName = req.body.city;
+    const autoCoordinates = getCoordinatesByCity(cityName);
+    
+    let coordinates = null;
+    if (req.body.lat && req.body.lng) {
+      coordinates = { lat: parseFloat(req.body.lat), lng: parseFloat(req.body.lng) };
+    } else {
+      coordinates = autoCoordinates;
+      logger.info(`Auto-assigned coordinates for ${cityName}: ${autoCoordinates.lat}, ${autoCoordinates.lng}`);
+    }
+
     const listingData = {
       ...req.body,
       images,
       gallery: galleryUrls,
+      coordinates,
       published: req.body.published || false,
       verified: req.body.verified || false,
       featured: req.body.featured || false,
       ownerName: req.body.ownerName || req.user.name,
       ownerEmail: req.body.ownerEmail || req.user.email,
+      views: 0,
+      weeklyBookings: 0,
+      monthlyBookings: 0,
     };
 
     const listing = await PGListing.create(listingData);
@@ -156,7 +301,6 @@ exports.createPGListing = async (req, res, next) => {
       data: listing,
     });
   } catch (error) {
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
       return errorResponse(res, {
@@ -166,7 +310,6 @@ exports.createPGListing = async (req, res, next) => {
       });
     }
     
-    // Handle duplicate slug error
     if (error.code === 11000) {
       return errorResponse(res, {
         statusCode: 400,
@@ -193,7 +336,13 @@ exports.updatePGListing = async (req, res, next) => {
 
     const updatePayload = { ...req.body };
 
-    // Optional image updates
+    if (req.body.lat && req.body.lng) {
+      updatePayload.coordinates = { lat: parseFloat(req.body.lat), lng: parseFloat(req.body.lng) };
+    } else if (req.body.city && req.body.city !== listing.city) {
+      const autoCoordinates = getCoordinatesByCity(req.body.city);
+      updatePayload.coordinates = autoCoordinates;
+    }
+
     if (Array.isArray(req.body.images) && req.body.images.length > 0) {
       const url = await uploadImage(req.body.images[0]);
       updatePayload.images = url ? [url] : listing.images;
@@ -296,7 +445,6 @@ exports.toggleStatus = async (req, res, next) => {
       });
     }
     
-    // Toggle the field
     listing[field] = !listing[field];
     listing.updatedAt = Date.now();
     
@@ -395,11 +543,296 @@ exports.searchPGListings = async (req, res, next) => {
   }
 };
 
+// ========== MAP & LOCATION BASED FEATURES ==========
+
+exports.getPGsForMap = async (req, res, next) => {
+  try {
+    const { lat, lng, radius = 10, limit = 100 } = req.query;
+    
+    let query = { 
+      published: true,
+      'coordinates.lat': { $ne: null, $exists: true },
+      'coordinates.lng': { $ne: null, $exists: true }
+    };
+    
+    if (lat && lng) {
+      const userLat = parseFloat(lat);
+      const userLng = parseFloat(lng);
+      
+      const allPGs = await PGListing.find(query)
+        .select('_id name address city price type images rating reviewCount coordinates slug')
+        .limit(parseInt(limit));
+      
+      const nearbyPGs = allPGs.filter(pg => {
+        if (!pg.coordinates?.lat || !pg.coordinates?.lng) return false;
+        
+        const distance = calculateDistance(
+          userLat, userLng,
+          pg.coordinates.lat, pg.coordinates.lng
+        );
+        
+        return distance <= parseFloat(radius);
+      }).map(pg => ({
+        ...pg.toObject(),
+        distance: calculateDistance(
+          userLat, userLng,
+          pg.coordinates.lat, pg.coordinates.lng
+        )
+      }));
+      
+      nearbyPGs.sort((a, b) => a.distance - b.distance);
+      
+      return successResponse(res, {
+        statusCode: 200,
+        message: 'Nearby PGs fetched successfully',
+        data: {
+          count: nearbyPGs.length,
+          items: nearbyPGs,
+          userLocation: { lat: userLat, lng: userLng }
+        }
+      });
+    }
+    
+    const pgs = await PGListing.find(query)
+      .select('_id name address city price type images rating reviewCount coordinates slug')
+      .limit(parseInt(limit));
+    
+    return successResponse(res, {
+      statusCode: 200,
+      message: 'Map data fetched successfully',
+      data: {
+        count: pgs.length,
+        items: pgs
+      }
+    });
+  } catch (error) {
+    console.error('Get map data error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: 'Failed to fetch map data',
+      errors: error.message
+    });
+  }
+};
+
+exports.getPGMapDetail = async (req, res, next) => {
+  try {
+    const pg = await PGListing.findById(req.params.id)
+      .select('_id name address city price type images rating reviewCount coordinates slug description amenities');
+    
+    if (!pg) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'PG not found'
+      });
+    }
+    
+    let distance = null;
+    if (req.query.lat && req.query.lng && pg.coordinates?.lat && pg.coordinates?.lng) {
+      distance = calculateDistance(
+        parseFloat(req.query.lat),
+        parseFloat(req.query.lng),
+        pg.coordinates.lat,
+        pg.coordinates.lng
+      );
+    }
+    
+    return successResponse(res, {
+      statusCode: 200,
+      message: 'PG map detail fetched successfully',
+      data: {
+        pg,
+        distance: distance ? `${distance.toFixed(1)} km` : null
+      }
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Invalid PG ID'
+      });
+    }
+    return next(error);
+  }
+};
+
+exports.getPGsByCityForMap = async (req, res, next) => {
+  try {
+    const { city } = req.params;
+    
+    const pgs = await PGListing.find({
+      city: { $regex: new RegExp(city, 'i') },
+      published: true,
+      'coordinates.lat': { $ne: null, $exists: true }
+    }).select('_id name address city price type images rating reviewCount coordinates slug');
+    
+    return successResponse(res, {
+      statusCode: 200,
+      message: `PGs in ${city} fetched successfully`,
+      data: pgs
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ========== DEMAND METER FEATURES ==========
+
+// @desc    Increment PG view count
+// @route   POST /api/pg/:id/increment-view
+// @access  Public
+exports.incrementViewCount = async (req, res, next) => {
+  try {
+    const pg = await PGListing.findById(req.params.id);
+    
+    if (!pg) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'PG not found'
+      });
+    }
+    
+    pg.views = (pg.views || 0) + 1;
+    pg.lastViewUpdate = new Date();
+    await pg.save();
+    
+    return successResponse(res, {
+      message: 'View count updated',
+      data: { views: pg.views }
+    });
+  } catch (error) {
+    console.error('Increment view error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get demand meter data for a PG
+// @route   GET /api/pg/:id/demand-meter
+// @access  Public
+exports.getDemandMeter = async (req, res, next) => {
+  try {
+    const pg = await PGListing.findById(req.params.id)
+      .select('views weeklyBookings monthlyBookings rating reviewCount');
+    
+    if (!pg) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'PG not found'
+      });
+    }
+    
+    const views = pg.views || 0;
+    const weeklyBookings = pg.weeklyBookings || 0;
+    
+    let demandLevel = 'Low';
+    let demandColor = 'bg-green-500';
+    let demandPercentage = 30;
+    let demandMessage = '📈 Good availability. Book at your convenience.';
+    
+    if (views > 500 || weeklyBookings > 20) {
+      demandLevel = 'Very High';
+      demandColor = 'bg-red-500';
+      demandPercentage = 95;
+      demandMessage = '⚡ Only few slots left! Book now to secure your spot.';
+    } else if (views > 200 || weeklyBookings > 10) {
+      demandLevel = 'High';
+      demandColor = 'bg-orange-500';
+      demandPercentage = 85;
+      demandMessage = '🔥 High demand! Limited availability. Book soon.';
+    } else if (views > 100 || weeklyBookings > 5) {
+      demandLevel = 'Medium';
+      demandColor = 'bg-yellow-500';
+      demandPercentage = 60;
+      demandMessage = '📈 Good interest in this property. Check availability.';
+    }
+    
+    return successResponse(res, {
+      message: 'Demand meter data fetched',
+      data: {
+        views,
+        weeklyBookings,
+        monthlyBookings: pg.monthlyBookings || 0,
+        rating: pg.rating || 4.5,
+        reviewCount: pg.reviewCount || 0,
+        demandLevel,
+        demandColor,
+        demandPercentage,
+        demandMessage
+      }
+    });
+  } catch (error) {
+    console.error('Get demand meter error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Get popular PGs (sorted by views/bookings)
+// @route   GET /api/pg/popular
+// @access  Public
+exports.getPopularPGs = async (req, res, next) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    const popularPGs = await PGListing.find({ published: true })
+      .sort({ views: -1, weeklyBookings: -1 })
+      .limit(parseInt(limit))
+      .select('name price images city rating views weeklyBookings slug');
+    
+    return successResponse(res, {
+      message: 'Popular PGs fetched successfully',
+      data: popularPGs
+    });
+  } catch (error) {
+    console.error('Get popular PGs error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: error.message
+    });
+  }
+};
+
+// @desc    Update booking count (call when booking is confirmed)
+// @route   POST /api/pg/:id/increment-booking
+// @access  Private/Admin
+exports.incrementBookingCount = async (req, res, next) => {
+  try {
+    const pg = await PGListing.findById(req.params.id);
+    
+    if (!pg) {
+      return errorResponse(res, {
+        statusCode: 404,
+        message: 'PG not found'
+      });
+    }
+    
+    pg.weeklyBookings = (pg.weeklyBookings || 0) + 1;
+    pg.monthlyBookings = (pg.monthlyBookings || 0) + 1;
+    await pg.save();
+    
+    return successResponse(res, {
+      message: 'Booking count updated',
+      data: {
+        weeklyBookings: pg.weeklyBookings,
+        monthlyBookings: pg.monthlyBookings
+      }
+    });
+  } catch (error) {
+    console.error('Increment booking error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: error.message
+    });
+  }
+};
+
 // ========== Wishlist ==========
 
-// @desc    Add PG to wishlist
-// @route   POST /api/pg/:id/wishlist
-// @access  Private
 exports.addToWishlist = async (req, res, next) => {
   try {
     const pgId = req.params.id;
@@ -445,9 +878,6 @@ exports.addToWishlist = async (req, res, next) => {
   }
 };
 
-// @desc    Remove PG from wishlist
-// @route   DELETE /api/pg/:id/wishlist
-// @access  Private
 exports.removeFromWishlist = async (req, res, next) => {
   try {
     const pgId = req.params.id;
@@ -476,14 +906,11 @@ exports.removeFromWishlist = async (req, res, next) => {
   }
 };
 
-// @desc    Get current user's wishlist
-// @route   GET /api/pg/wishlist
-// @access  Private
 exports.getWishlist = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id).populate({
       path: 'wishlist',
-      select: 'name price city type images rating reviewCount featured verified',
+      select: 'name price city type images rating reviewCount featured verified coordinates slug',
     });
 
     if (!user) {
@@ -507,9 +934,6 @@ exports.getWishlist = async (req, res, next) => {
 
 // ========== Compare ==========
 
-// @desc    Add PG to compare list (max 3)
-// @route   POST /api/pg/:id/compare
-// @access  Private
 exports.addToCompare = async (req, res, next) => {
   try {
     const pgId = req.params.id;
@@ -562,9 +986,6 @@ exports.addToCompare = async (req, res, next) => {
   }
 };
 
-// @desc    Remove PG from compare list
-// @route   DELETE /api/pg/:id/compare
-// @access  Private
 exports.removeFromCompare = async (req, res, next) => {
   try {
     const pgId = req.params.id;
@@ -593,15 +1014,12 @@ exports.removeFromCompare = async (req, res, next) => {
   }
 };
 
-// @desc    Get current user's compare list
-// @route   GET /api/pg/compare
-// @access  Private
 exports.getCompareList = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id).populate({
       path: 'compare',
       select:
-        'name price city type images rating reviewCount amenities roomTypes featured verified',
+        'name price city type images rating reviewCount amenities roomTypes featured verified coordinates slug',
     });
 
     if (!user) {
@@ -625,9 +1043,6 @@ exports.getCompareList = async (req, res, next) => {
 
 // ========== Detail ==========
 
-// @desc    Get detailed PG view (with related data)
-// @route   GET /api/pg/:id/detail
-// @access  Public
 exports.getPGDetail = async (req, res, next) => {
   try {
     const pgId = req.params.id;

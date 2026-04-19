@@ -9,7 +9,7 @@ const PGListingSchema = new mongoose.Schema({
   },
   slug: {
     type: String,
-    unique: true,  // ✅ This creates index automatically
+    unique: true,
     lowercase: true,
     trim: true
   },
@@ -40,6 +40,20 @@ const PGListingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  
+  // MAP COORDINATES
+  coordinates: {
+    lat: {
+      type: Number,
+      default: null
+    },
+    lng: {
+      type: Number,
+      default: null
+    }
+  },
+  
+  // GeoJSON format for MongoDB geospatial queries
   location: {
     type: {
       type: String,
@@ -110,6 +124,24 @@ const PGListingSchema = new mongoose.Schema({
     default: 0
   },
   
+  // ✅ DEMAND METER FIELDS (ADD THESE)
+  views: {
+    type: Number,
+    default: 0
+  },
+  weeklyBookings: {
+    type: Number,
+    default: 0
+  },
+  monthlyBookings: {
+    type: Number,
+    default: 0
+  },
+  lastViewUpdate: {
+    type: Date,
+    default: Date.now
+  },
+  
   // Owner Information
   ownerName: {
     type: String,
@@ -136,16 +168,6 @@ const PGListingSchema = new mongoose.Schema({
   contactPhone: {
     type: String,
     default: ''
-  },
-  
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: true,
@@ -162,25 +184,77 @@ PGListingSchema.pre('save', function(next) {
       .replace(/[^a-z0-9-]/g, '')
       .replace(/-+/g, '-');
   }
+  
+  // Auto-sync coordinates with location field for geospatial queries
+  if (this.coordinates && this.coordinates.lat && this.coordinates.lng) {
+    this.location = {
+      type: 'Point',
+      coordinates: [this.coordinates.lng, this.coordinates.lat]
+    };
+  }
+  
   next();
 });
 
-// Index for faster queries
-// ❌ REMOVED: PGListingSchema.index({ slug: 1 }); // Duplicate - already covered by unique:true
+// Virtual to get lat/lng easily
+PGListingSchema.virtual('lat').get(function() {
+  return this.coordinates?.lat || this.location?.coordinates?.[1] || null;
+});
 
-// ✅ Keep these indexes (they're not duplicates)
-PGListingSchema.index({ name: 1 });              // For searching by name
-PGListingSchema.index({ city: 1 });               // For filtering by city
-PGListingSchema.index({ type: 1 });                // For filtering by type
-PGListingSchema.index({ price: 1 });               // For sorting by price
-PGListingSchema.index({ published: 1 });           // For filtering published listings
-PGListingSchema.index({ location: '2dsphere' });   // For geo queries
+PGListingSchema.virtual('lng').get(function() {
+  return this.coordinates?.lng || this.location?.coordinates?.[0] || null;
+});
+
+// Helper method to get formatted coordinates for frontend
+PGListingSchema.methods.getMapCoordinates = function() {
+  const lat = this.coordinates?.lat || this.location?.coordinates?.[1];
+  const lng = this.coordinates?.lng || this.location?.coordinates?.[0];
+  
+  if (lat && lng) {
+    return { lat, lng };
+  }
+  return null;
+};
+
+// ✅ Method to increment view count
+PGListingSchema.methods.incrementViews = async function() {
+  this.views += 1;
+  this.lastViewUpdate = new Date();
+  return await this.save();
+};
+
+// ✅ Method to increment booking count
+PGListingSchema.methods.incrementBookings = async function() {
+  this.weeklyBookings += 1;
+  this.monthlyBookings += 1;
+  return await this.save();
+};
+
+// Indexes for faster queries
+PGListingSchema.index({ slug: 1 });
+PGListingSchema.index({ name: 1 });
+PGListingSchema.index({ city: 1 });
+PGListingSchema.index({ type: 1 });
+PGListingSchema.index({ price: 1 });
+PGListingSchema.index({ published: 1 });
+PGListingSchema.index({ rating: -1 });
+PGListingSchema.index({ createdAt: -1 });
+PGListingSchema.index({ views: -1 }); // ✅ For popular sorting
+PGListingSchema.index({ weeklyBookings: -1 }); // ✅ For trending sorting
+PGListingSchema.index({ location: '2dsphere' });
+
+// Compound indexes for common queries
+PGListingSchema.index({ city: 1, published: 1, price: 1 });
+PGListingSchema.index({ type: 1, city: 1, published: 1 });
+PGListingSchema.index({ published: 1, views: -1 }); // ✅ For popular PGs
+
+// Text search index
 PGListingSchema.index({ 
   name: 'text', 
   description: 'text', 
   address: 'text', 
   city: 'text' 
-});  // For text search
+});
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 

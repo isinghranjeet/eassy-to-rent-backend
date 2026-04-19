@@ -8,25 +8,42 @@ const pgRoutes = require('./routes/pg');
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
 const reviewRoutes = require('./routes/reviews');
+const wishlistRoutes = require('./routes/wishlistRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const priceAlertRoutes = require('./routes/priceAlertRoutes');
+const blogRoutes = require('./routes/blogRoutes'); // ✅ ADD BLOG ROUTES
+
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const logger = require('./utils/logger');
 
+// ✅ Import cron jobs
+require('./jobs/wishlistReminderJob');
+
 const app = express();
 
-// 🔥 Trust proxy (IMPORTANT for Render)
+// ======================
+// TRUST PROXY
+// ======================
 app.set('trust proxy', 1);
 
-// Database
+// ======================
+// DATABASE
+// ======================
 connectDB();
 
-// Security middleware
+// ======================
+// SECURITY
+// ======================
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
 
-// ✅ CORS CONFIG
+// ======================
+// CORS
+// ======================
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -35,49 +52,55 @@ const allowedOrigins = [
   'https://www.easytorent.in',
 ];
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
 
-    if (
-      allowedOrigins.includes(origin) ||
-      process.env.NODE_ENV === 'development'
-    ) {
-      callback(null, true);
-    } else {
+      if (
+        allowedOrigins.includes(origin) ||
+        process.env.NODE_ENV === 'development'
+      ) {
+        return callback(null, true);
+      }
+
       logger.warn(`❌ CORS blocked: ${origin}`);
       callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-};
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options('*', cors());
 
-// Body parser
+// ======================
+// BODY PARSER
+// ======================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Logger
+// ======================
+// LOGGER
+// ======================
 app.use((req, res, next) => {
-  logger.http(`${req.method} ${req.originalUrl}`, {
-    origin: req.headers.origin,
-    ip: req.ip,
-  });
+  logger.http(`${req.method} ${req.originalUrl}`);
   next();
 });
 
-// ✅ GLOBAL LIMITER
+// ======================
+// RATE LIMITERS
+// ======================
+
+// Global limiter
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 200,
 });
 app.use(globalLimiter);
 
-// ✅ AUTH LIMITER
+// Auth limiter
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -91,19 +114,8 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth', authLimiter);
 
-// ✅ OTP LIMITER
-const otpLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 3,
-  message: {
-    success: false,
-    message: 'Wait 60 seconds before next OTP',
-  },
-});
-app.use('/api/auth/login', otpLimiter);
-
 // ======================
-// ✅ HEALTH ROUTES
+// HEALTH ROUTES
 // ======================
 app.get('/api/health', (req, res) => {
   res.json({
@@ -122,38 +134,36 @@ app.get('/health', (req, res) => {
 });
 
 // ======================
-// 🔥 ROOT ROUTE FIX (IMPORTANT)
+// ROOT
 // ======================
 app.get('/', (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
     message: '🚀 PG Finder Backend Running',
   });
 });
 
-// 🔥 HANDLE HEAD REQUEST (Cloudflare fix)
-app.head('/', (req, res) => {
-  res.status(200).end();
-});
-
 // ======================
-// ✅ API ROUTES
+// API ROUTES
 // ======================
 app.use('/api/pg', pgRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/price-alerts', priceAlertRoutes);
+app.use('/api/blogs', blogRoutes); // ✅ ADD BLOG ROUTES
 
 // ======================
-// ❗ 404 HANDLER (LAST)
+// ERROR HANDLING
 // ======================
 app.use(notFound);
-
-// ❗ ERROR HANDLER (LAST)
 app.use(errorHandler);
 
 // ======================
-// 🔥 HANDLE CRASHES
+// CRASH HANDLERS
 // ======================
 process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);
