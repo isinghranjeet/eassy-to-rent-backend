@@ -53,7 +53,7 @@ const userSchema = new mongoose.Schema({
     default: null
   },
   
-  // ✅ GOOGLE LOGIN FIELDS (ADD THESE)
+  // ✅ GOOGLE LOGIN FIELDS
   googleId: {
     type: String,
     unique: true,
@@ -67,6 +67,21 @@ const userSchema = new mongoose.Schema({
   isSocialLogin: {
     type: Boolean,
     default: false
+  },
+  
+  // 🆕 CREDIT SYSTEM FIELDS (ADD THESE)
+  credits: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  totalCreditsPurchased: {
+    type: Number,
+    default: 0
+  },
+  totalCreditsUsed: {
+    type: Number,
+    default: 0
   },
   
   wishlist: [
@@ -119,6 +134,32 @@ userSchema.methods.toJSON = function() {
 userSchema.methods.comparePassword = async function(candidatePassword) {
   if (!this.password) return false;
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// 🆕 Method to add credits
+userSchema.methods.addCredits = async function(amount) {
+  this.credits += amount;
+  this.totalCreditsPurchased += amount;
+  this.updatedAt = Date.now();
+  await this.save();
+  return this.credits;
+};
+
+// 🆕 Method to use credits
+userSchema.methods.useCredits = async function(amount = 1) {
+  if (this.credits < amount) {
+    throw new Error('Insufficient credits');
+  }
+  this.credits -= amount;
+  this.totalCreditsUsed += amount;
+  this.updatedAt = Date.now();
+  await this.save();
+  return this.credits;
+};
+
+// 🆕 Method to check if user has enough credits
+userSchema.methods.hasEnoughCredits = function(amount = 1) {
+  return this.credits >= amount;
 };
 
 const User = mongoose.model('User', userSchema);

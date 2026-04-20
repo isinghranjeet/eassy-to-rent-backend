@@ -1,22 +1,77 @@
-const protect = async (req, res, next) => {
-  let token;
+// backend/src/models/Booking.js (Enhanced)
+import mongoose from 'mongoose';
 
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith('Bearer')
-  ) {
-    try {
-      token = req.headers.authorization.split(' ')[1]; // Bearer <token>
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+const bookingSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  pgId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PGListing',
+    required: true
+  },
+  roomType: {
+    type: String,
+    required: true
+  },
+  checkInDate: {
+    type: Date,
+    required: true
+  },
+  checkOutDate: {
+    type: Date,
+    required: true
+  },
+  durationMonths: {
+    type: Number,
+    required: true
+  },
+  totalAmount: {
+    type: Number,
+    required: true
+  },
+  discountApplied: {
+    type: Number,
+    default: 0
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'confirmed', 'cancelled', 'completed', 'refunded'],
+    default: 'pending'
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending'
+  },
+  razorpayOrderId: String,
+  razorpayPaymentId: String,
+  guestDetails: {
+    name: { type: String, required: true },
+    phone: { type: String, required: true },
+    email: String,
+    aadharNumber: String,
+    emergencyContact: String
+  },
+  specialRequests: String,
+  reviewed: {
+    type: Boolean,
+    default: false
+  },
+  reviewId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Review'
+  },
+  cancelledAt: Date,
+  cancellationReason: String,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
 
-      req.user = await User.findById(decoded.id).select('-password');
-      next();
-    } catch (error) {
-      res.status(401).json({ message: 'Not authorized, token failed' });
-    }
-  }
+// Index for faster queries
+bookingSchema.index({ userId: 1, status: 1 });
+bookingSchema.index({ pgId: 1, checkInDate: 1 });
 
-  if (!token) {
-    res.status(401).json({ message: 'Not authorized, no token' });
-  }
-};
+export default mongoose.model('Booking', bookingSchema);

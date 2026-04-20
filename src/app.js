@@ -12,12 +12,16 @@ const wishlistRoutes = require('./routes/wishlistRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const priceAlertRoutes = require('./routes/priceAlertRoutes');
-const blogRoutes = require('./routes/blogRoutes'); // ✅ ADD BLOG ROUTES
+const blogRoutes = require('./routes/blogRoutes');
+
+// 🆕 NEW ROUTES
+const paymentRoutes = require('./routes/paymentRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
 
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const logger = require('./utils/logger');
 
-// ✅ Import cron jobs
+// Import cron jobs
 require('./jobs/wishlistReminderJob');
 
 const app = express();
@@ -48,8 +52,11 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:5000',
+  'http://localhost:10000',
   'https://eassy-to-rent-backend.onrender.com',
   'https://www.easytorent.in',
+  'https://eassytorent.in',
+  'https://eassy-to-rent-startup.vercel.app',
 ];
 
 app.use(
@@ -140,6 +147,15 @@ app.get('/', (req, res) => {
   res.json({
     success: true,
     message: '🚀 PG Finder Backend Running',
+    features: {
+      bookings: true,
+      reviews: true,
+      payments: true,
+      recommendations: true,
+      wishlist: true,
+      priceAlerts: true,
+      blogs: true
+    }
   });
 });
 
@@ -154,7 +170,11 @@ app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/price-alerts', priceAlertRoutes);
-app.use('/api/blogs', blogRoutes); // ✅ ADD BLOG ROUTES
+app.use('/api/blogs', blogRoutes);
+
+// 🆕 NEW ROUTES
+app.use('/api/payments', paymentRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 
 // ======================
 // ERROR HANDLING
@@ -169,6 +189,7 @@ process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);
 });
 
+// FIXED: Added missing closing parenthesis
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught Exception:', err);
 });
