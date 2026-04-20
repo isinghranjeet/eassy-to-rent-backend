@@ -41,37 +41,37 @@ const startServer = () => {
   });
 
   // ======================
-  // GRACEFUL SHUTDOWN
+  // GRACEFUL SHUTDOWN (FIXED)
   // ======================
-  const shutdown = (signal) => {
+  const shutdown = async (signal) => {
     logger.info(`📥 ${signal} received`);
 
     server.close(() => {
       logger.info('🛑 HTTP server closed');
-
-      mongoose.connection.close(false, () => {
-        logger.info('🛑 MongoDB connection closed');
-        process.exit(0);
-      });
     });
 
-    setTimeout(() => {
-      logger.error('⚠️ Force shutdown');
-      process.exit(1);
-    }, 10000);
+    // FIXED: Use async/await instead of callback
+    try {
+      await mongoose.connection.close(false);
+      logger.info('🛑 MongoDB connection closed');
+    } catch (err) {
+      logger.error('❌ Error closing MongoDB connection:', err.message);
+    }
+
+    process.exit(0);
   };
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  process.on('uncaughtException', (err) => {
+  process.on('uncaughtException', async (err) => {
     logger.error('❌ Uncaught Exception:', err.message);
-    shutdown('UNCAUGHT_EXCEPTION');
+    await shutdown('UNCAUGHT_EXCEPTION');
   });
 
-  process.on('unhandledRejection', (err) => {
+  process.on('unhandledRejection', async (err) => {
     logger.error('❌ Unhandled Rejection:', err.message);
-    shutdown('UNHANDLED_REJECTION');
+    await shutdown('UNHANDLED_REJECTION');
   });
 };
 
