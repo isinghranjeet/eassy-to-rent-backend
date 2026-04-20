@@ -10,7 +10,7 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'z96jUOnHgrXvouEqxVb5AAr1'
 });
 
-// Get user credit balance (FIXED)
+// Get user credit balance
 const getCreditBalance = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -18,9 +18,8 @@ const getCreditBalance = async (req, res) => {
     let credit = await CallCredit.findOne({ userId });
     
     if (!credit) {
-      // ✅ FIXED: Added userId
       credit = new CallCredit({ 
-        userId: userId,
+        userId: userId,  // ✅ REQUIRED
         balance: 0,
         totalPurchased: 0,
         totalUsed: 0,
@@ -40,16 +39,21 @@ const getCreditBalance = async (req, res) => {
     console.error('Error fetching credit balance:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to fetch credit balance'
+      message: 'Failed to fetch credit balance',
+      error: error.message
     });
   }
 };
 
-// Generate UPI QR Code (FIXED)
+// Generate UPI QR Code
 const generateUPIQR = async (req, res) => {
   try {
     const { amount = 10 } = req.body;
     const userId = req.user.id;
+    
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
     
     console.log('Generating UPI QR for user:', userId);
     
@@ -68,11 +72,11 @@ const generateUPIQR = async (req, res) => {
       width: 300
     });
     
-    // ✅ FIXED: Get or create credit record with userId
+    // Get or create credit record with userId
     let credit = await CallCredit.findOne({ userId });
     if (!credit) {
       credit = new CallCredit({ 
-        userId: userId,
+        userId: userId,  // ✅ REQUIRED
         balance: 0,
         totalPurchased: 0,
         totalUsed: 0,
@@ -118,7 +122,12 @@ const generateUPIQR = async (req, res) => {
 // Verify UPI Payment
 const verifyUPIPayment = async (req, res) => {
   try {
-    const { transactionId, userId } = req.body;
+    const { transactionId } = req.body;
+    const userId = req.user.id;  // ✅ Get userId from authenticated user
+    
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
     
     const credit = await CallCredit.findOne({ userId });
     if (!credit || !credit.pendingTransactions) {
@@ -212,11 +221,10 @@ const verifyCallCreditPayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Payment not captured' });
     }
 
-    // ✅ FIXED: Added userId
     let credit = await CallCredit.findOne({ userId });
     if (!credit) {
       credit = new CallCredit({ 
-        userId: userId,
+        userId: userId,  // ✅ REQUIRED
         balance: 0,
         totalPurchased: 0,
         totalUsed: 0,
@@ -265,9 +273,8 @@ const useContactCredit = async (req, res) => {
     let credit = await CallCredit.findOne({ userId });
     
     if (!credit) {
-      // ✅ FIXED: Added userId
       credit = new CallCredit({ 
-        userId: userId,
+        userId: userId,  // ✅ REQUIRED
         balance: 0,
         totalPurchased: 0,
         totalUsed: 0,
