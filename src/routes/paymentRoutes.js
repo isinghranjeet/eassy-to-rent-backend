@@ -1,4 +1,3 @@
-// backend/src/routes/paymentRoutes.js
 const express = require('express');
 const {
   createCallCreditOrder,

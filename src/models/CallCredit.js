@@ -1,4 +1,3 @@
-// backend/src/models/CallCredit.js
 const mongoose = require('mongoose');
 
 const callCreditSchema = new mongoose.Schema({
