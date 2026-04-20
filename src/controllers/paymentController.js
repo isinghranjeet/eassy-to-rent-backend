@@ -10,69 +10,92 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'z96jUOnHgrXvouEqxVb5AAr1'
 });
 
-// Create REAL Razorpay order for card payments
-const createCallCreditOrder = async (req, res) => {
+// Get user credit balance (FIXED)
+const getCreditBalance = async (req, res) => {
   try {
-    const { amount = 10 } = req.body;
     const userId = req.user.id;
-
-    const options = {
-      amount: amount * 100,
-      currency: 'INR',
-      receipt: `receipt_${userId}_${Date.now()}`,
-      notes: { userId: userId, credits: 4, type: 'call_credit' },
-      payment_capture: 1
-    };
-
-    const order = await razorpay.orders.create(options);
+    
+    let credit = await CallCredit.findOne({ userId });
+    
+    if (!credit) {
+      // ✅ FIXED: Added userId
+      credit = new CallCredit({ 
+        userId: userId,
+        balance: 0,
+        totalPurchased: 0,
+        totalUsed: 0,
+        transactions: [],
+        pendingTransactions: []
+      });
+      await credit.save();
+    }
     
     res.json({
       success: true,
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      keyId: process.env.RAZORPAY_KEY_ID
+      balance: credit.balance || 0,
+      totalPurchased: credit.totalPurchased || 0,
+      totalUsed: credit.totalUsed || 0
     });
   } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ success: false, message: error.message || 'Failed to create order' });
+    console.error('Error fetching credit balance:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch credit balance'
+    });
   }
 };
 
-// Generate UPI QR Code
+// Generate UPI QR Code (FIXED)
 const generateUPIQR = async (req, res) => {
   try {
     const { amount = 10 } = req.body;
     const userId = req.user.id;
+    
+    console.log('Generating UPI QR for user:', userId);
     
     // Your actual UPI ID
     const upiId = '9315058665@ptsbi';
     const name = 'EasyTorent';
     const note = `Credits for ${userId}`;
     
+    // Create UPI URI
     const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
     
+    // Generate QR Code
     const qrCode = await QRCode.toDataURL(upiUri, {
       errorCorrectionLevel: 'H',
       margin: 2,
-      width: 300,
-      color: { dark: '#000000', light: '#FFFFFF' }
+      width: 300
     });
     
+    // ✅ FIXED: Get or create credit record with userId
     let credit = await CallCredit.findOne({ userId });
     if (!credit) {
-      credit = new CallCredit({ userId, balance: 0 });
+      credit = new CallCredit({ 
+        userId: userId,
+        balance: 0,
+        totalPurchased: 0,
+        totalUsed: 0,
+        transactions: [],
+        pendingTransactions: []
+      });
+      await credit.save();
     }
     
+    // Create pending transaction
     const transactionId = `UPI_${userId}_${Date.now()}`;
-    credit.pendingTransactions = credit.pendingTransactions || [];
-    credit.pendingTransactions.push({
+    const pendingTransaction = {
       transactionId: transactionId,
       amount: amount,
       type: 'upi',
       status: 'pending',
       createdAt: new Date()
-    });
+    };
+    
+    if (!credit.pendingTransactions) {
+      credit.pendingTransactions = [];
+    }
+    credit.pendingTransactions.push(pendingTransaction);
     await credit.save();
     
     res.json({
@@ -85,7 +108,10 @@ const generateUPIQR = async (req, res) => {
     });
   } catch (error) {
     console.error('Error generating QR:', error);
-    res.status(500).json({ success: false, message: 'Failed to generate QR code' });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to generate QR code'
+    });
   }
 };
 
@@ -135,6 +161,35 @@ const verifyUPIPayment = async (req, res) => {
   }
 };
 
+// Create Razorpay order for card payments
+const createCallCreditOrder = async (req, res) => {
+  try {
+    const { amount = 10 } = req.body;
+    const userId = req.user.id;
+
+    const options = {
+      amount: amount * 100,
+      currency: 'INR',
+      receipt: `receipt_${userId}_${Date.now()}`,
+      notes: { userId: userId, credits: 4, type: 'call_credit' },
+      payment_capture: 1
+    };
+
+    const order = await razorpay.orders.create(options);
+    
+    res.json({
+      success: true,
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: process.env.RAZORPAY_KEY_ID
+    });
+  } catch (error) {
+    console.error('Error creating order:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to create order' });
+  }
+};
+
 // Verify card payment
 const verifyCallCreditPayment = async (req, res) => {
   try {
@@ -157,9 +212,18 @@ const verifyCallCreditPayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Payment not captured' });
     }
 
+    // ✅ FIXED: Added userId
     let credit = await CallCredit.findOne({ userId });
     if (!credit) {
-      credit = new CallCredit({ userId, balance: 0 });
+      credit = new CallCredit({ 
+        userId: userId,
+        balance: 0,
+        totalPurchased: 0,
+        totalUsed: 0,
+        transactions: [],
+        pendingTransactions: []
+      });
+      await credit.save();
     }
 
     credit.balance += 4;
@@ -188,30 +252,6 @@ const verifyCallCreditPayment = async (req, res) => {
   }
 };
 
-// Get user credit balance
-const getCreditBalance = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    let credit = await CallCredit.findOne({ userId });
-    
-    if (!credit) {
-      credit = new CallCredit({ userId, balance: 0 });
-      await credit.save();
-    }
-    
-    res.json({
-      success: true,
-      balance: credit.balance,
-      totalPurchased: credit.totalPurchased,
-      totalUsed: credit.totalUsed
-    });
-  } catch (error) {
-    console.error('Error fetching credit balance:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch credit balance' });
-  }
-};
-
 // Use credit for contact
 const useContactCredit = async (req, res) => {
   try {
@@ -225,7 +265,15 @@ const useContactCredit = async (req, res) => {
     let credit = await CallCredit.findOne({ userId });
     
     if (!credit) {
-      credit = new CallCredit({ userId, balance: 0 });
+      // ✅ FIXED: Added userId
+      credit = new CallCredit({ 
+        userId: userId,
+        balance: 0,
+        totalPurchased: 0,
+        totalUsed: 0,
+        transactions: [],
+        pendingTransactions: []
+      });
       await credit.save();
     }
     
@@ -265,38 +313,11 @@ const useContactCredit = async (req, res) => {
   }
 };
 
-// Check if user can contact
-const canContact = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const credit = await CallCredit.findOne({ userId });
-    
-    if (!credit || credit.balance < 1) {
-      return res.json({
-        success: true,
-        canContact: false,
-        message: 'Insufficient credits. Please purchase credits to contact.',
-        balance: credit?.balance || 0
-      });
-    }
-
-    res.json({
-      success: true,
-      canContact: true,
-      balance: credit.balance
-    });
-  } catch (error) {
-    console.error('Error checking contact eligibility:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
-
 module.exports = {
   createCallCreditOrder,
   verifyCallCreditPayment,
   getCreditBalance,
   useContactCredit,
-  canContact,
   generateUPIQR,
   verifyUPIPayment
 };
