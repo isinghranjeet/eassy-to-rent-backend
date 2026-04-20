@@ -1,3 +1,4 @@
+// backend/src/models/CallCredit.js
 const mongoose = require('mongoose');
 
 const callCreditSchema = new mongoose.Schema({
@@ -20,11 +21,23 @@ const callCreditSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  pendingTransactions: [{
+    transactionId: String,
+    amount: Number,
+    type: String,
+    status: {
+      type: String,
+      enum: ['pending', 'completed', 'failed'],
+      default: 'pending'
+    },
+    createdAt: Date,
+    completedAt: Date
+  }],
   transactions: [{
+    amount: Number,
     type: { 
       type: String, 
-      enum: ['purchase', 'use', 'refund'],
-      required: true
+      enum: ['purchase', 'use', 'refund']
     },
     pgId: { 
       type: mongoose.Schema.Types.ObjectId, 
@@ -34,14 +47,8 @@ const callCreditSchema = new mongoose.Schema({
       type: String, 
       enum: ['call', 'whatsapp'] 
     },
-    amount: {
-      type: Number,
-      default: 0
-    },
-    cost: {
-      type: Number,
-      default: 0
-    },
+    cost: Number,
+    paymentMethod: String,
     razorpayOrderId: String,
     razorpayPaymentId: String,
     date: { 
@@ -59,7 +66,6 @@ const callCreditSchema = new mongoose.Schema({
   }
 });
 
-// Update timestamp on save
 callCreditSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();

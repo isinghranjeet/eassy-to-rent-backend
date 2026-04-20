@@ -1,24 +1,26 @@
+// backend/src/controllers/paymentController.js
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const CallCredit = require('../models/CallCredit');
 const PGListing = require('../models/PGListing');
 
-// Initialize Razorpay with your test keys
+// Initialize Razorpay
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_SflfuTdO7GtSJg',
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'z96jUOnHgrXvouEqxVb5AAr1'
 });
 
-// Create REAL Razorpay order (NO MOCK)
+// Create REAL Razorpay order for card payments
 const createCallCreditOrder = async (req, res) => {
   try {
     const { amount = 10 } = req.body;
     const userId = req.user.id;
 
-    console.log('Creating REAL Razorpay order for user:', userId);
+    console.log('Creating Razorpay order for user:', userId);
 
     const options = {
-      amount: amount * 100, // ₹10 = 1000 paise
+      amount: amount * 100,
       currency: 'INR',
       receipt: `receipt_${userId}_${Date.now()}`,
       notes: {
@@ -29,10 +31,9 @@ const createCallCreditOrder = async (req, res) => {
       payment_capture: 1
     };
 
-    // Create REAL order from Razorpay
     const order = await razorpay.orders.create(options);
     
-    console.log('✅ REAL Razorpay order created:', order.id);
+    console.log('Order created:', order.id);
 
     res.json({
       success: true,
@@ -42,7 +43,7 @@ const createCallCreditOrder = async (req, res) => {
       keyId: process.env.RAZORPAY_KEY_ID
     });
   } catch (error) {
-    console.error('❌ Error creating Razorpay order:', error);
+    console.error('Error creating order:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Failed to create order'
@@ -50,15 +51,118 @@ const createCallCreditOrder = async (req, res) => {
   }
 };
 
-// Verify payment and add credits
+// Generate UPI QR Code with your UPI ID
+const generateUPIQR = async (req, res) => {
+  try {
+    const { amount = 10 } = req.body;
+    const userId = req.user.id;
+    
+    // ✅ YOUR ACTUAL UPI ID - PhonePe
+    const upiId = '9315058665@ptsbi';
+    const name = 'EasyTorent';
+    const note = `Credits for ${userId}`;
+    
+    // Create UPI URI
+    const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR&tn=${encodeURIComponent(note)}`;
+    
+    // Generate QR Code as base64
+    const qrCode = await QRCode.toDataURL(upiUri, {
+      errorCorrectionLevel: 'H',
+      margin: 2,
+      width: 300,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+    
+    // Create a pending transaction record
+    let credit = await CallCredit.findOne({ userId });
+    if (!credit) {
+      credit = new CallCredit({ userId, balance: 0 });
+    }
+    
+    const transactionId = `UPI_${userId}_${Date.now()}`;
+    credit.pendingTransactions = credit.pendingTransactions || [];
+    credit.pendingTransactions.push({
+      transactionId: transactionId,
+      amount: amount,
+      type: 'upi',
+      status: 'pending',
+      createdAt: new Date()
+    });
+    await credit.save();
+    
+    res.json({
+      success: true,
+      qrCode: qrCode,
+      upiId: upiId,
+      amount: amount,
+      transactionId: transactionId,
+      upiUri: upiUri
+    });
+  } catch (error) {
+    console.error('Error generating QR:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to generate QR code'
+    });
+  }
+};
+
+// Verify UPI Payment (Manual verification)
+const verifyUPIPayment = async (req, res) => {
+  try {
+    const { transactionId, userId } = req.body;
+    
+    const credit = await CallCredit.findOne({ userId });
+    if (!credit || !credit.pendingTransactions) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+    
+    const transaction = credit.pendingTransactions.find(t => t.transactionId === transactionId);
+    if (!transaction) {
+      return res.status(404).json({ success: false, message: 'Transaction not found' });
+    }
+    
+    if (transaction.status === 'completed') {
+      return res.json({ success: true, message: 'Already verified', balance: credit.balance });
+    }
+    
+    // Mark as completed and add credits
+    transaction.status = 'completed';
+    transaction.completedAt = new Date();
+    
+    credit.balance += 4;
+    credit.totalPurchased += 4;
+    credit.transactions.push({
+      amount: transaction.amount,
+      type: 'purchase',
+      cost: transaction.amount,
+      paymentMethod: 'UPI',
+      date: new Date()
+    });
+    credit.updatedAt = new Date();
+    
+    await credit.save();
+    
+    res.json({
+      success: true,
+      message: 'Payment verified! Credits added.',
+      balance: credit.balance
+    });
+  } catch (error) {
+    console.error('Error verifying UPI payment:', error);
+    res.status(500).json({ success: false, message: 'Verification failed' });
+  }
+};
+
+// Verify card payment
 const verifyCallCreditPayment = async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     const userId = req.user.id;
 
-    console.log('Verifying payment for order:', razorpay_order_id);
-
-    // Verify signature
     const body = razorpay_order_id + '|' + razorpay_payment_id;
     const expectedSignature = crypto
       .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
@@ -66,19 +170,15 @@ const verifyCallCreditPayment = async (req, res) => {
       .digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
-      console.error('❌ Invalid signature');
       return res.status(400).json({ success: false, message: 'Invalid signature' });
     }
 
-    // Fetch payment details
     const payment = await razorpay.payments.fetch(razorpay_payment_id);
     
     if (payment.status !== 'captured') {
-      console.error('❌ Payment not captured:', payment.status);
       return res.status(400).json({ success: false, message: 'Payment not captured' });
     }
 
-    // Add credits to user
     let credit = await CallCredit.findOne({ userId });
     if (!credit) {
       credit = new CallCredit({ userId, balance: 0 });
@@ -92,13 +192,12 @@ const verifyCallCreditPayment = async (req, res) => {
       cost: payment.amount / 100,
       razorpayOrderId: razorpay_order_id,
       razorpayPaymentId: razorpay_payment_id,
+      paymentMethod: 'Card',
       date: new Date()
     });
     credit.updatedAt = new Date();
 
     await credit.save();
-
-    console.log('✅ Credits added. New balance:', credit.balance);
 
     res.json({
       success: true,
@@ -106,7 +205,7 @@ const verifyCallCreditPayment = async (req, res) => {
       balance: credit.balance
     });
   } catch (error) {
-    console.error('❌ Error verifying payment:', error);
+    console.error('Error verifying payment:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message || 'Payment verification failed'
@@ -243,5 +342,7 @@ module.exports = {
   verifyCallCreditPayment,
   getCreditBalance,
   useContactCredit,
-  canContact
+  canContact,
+  generateUPIQR,
+  verifyUPIPayment
 };

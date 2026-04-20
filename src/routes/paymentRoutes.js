@@ -1,23 +1,27 @@
+// backend/src/routes/paymentRoutes.js
 const express = require('express');
 const {
   createCallCreditOrder,
   verifyCallCreditPayment,
   getCreditBalance,
   useContactCredit,
-  canContact
+  canContact,
+  generateUPIQR,
+  verifyUPIPayment
 } = require('../controllers/paymentController');
 const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// All payment routes require authentication
 router.use(protect);
 
-// Order creation
+// Card/Razorpay routes
 router.post('/create-call-credit-order', createCallCreditOrder);
-
-// Payment verification
 router.post('/verify-call-credit', verifyCallCreditPayment);
+
+// UPI/QR routes
+router.post('/generate-upi-qr', generateUPIQR);
+router.post('/verify-upi-payment', verifyUPIPayment);
 
 // Credit management
 router.get('/credit-balance', getCreditBalance);
