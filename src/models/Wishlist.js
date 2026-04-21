@@ -1,10 +1,9 @@
-// backend/models/Wishlist.js
 const mongoose = require('mongoose');
 
 const wishlistItemSchema = new mongoose.Schema({
   pg: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'PG',
+    ref: 'PGListing',  // ← 'PG' ki jagah 'PGListing'
     required: true
   },
   addedAt: {

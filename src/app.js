@@ -17,6 +17,8 @@ const blogRoutes = require('./routes/blogRoutes');
 // 🆕 NEW ROUTES
 const paymentRoutes = require('./routes/paymentRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
+const statsRoutes = require('./routes/statsRoutes');  // ✅ ADDED
+const userRoutes = require('./routes/userRoutes');     // ✅ ADDED (for admin user management)
 
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const logger = require('./utils/logger');
@@ -154,7 +156,9 @@ app.get('/', (req, res) => {
       recommendations: true,
       wishlist: true,
       priceAlerts: true,
-      blogs: true
+      blogs: true,
+      stats: true,
+      notifications: true
     }
   });
 });
@@ -175,6 +179,8 @@ app.use('/api/blogs', blogRoutes);
 // 🆕 NEW ROUTES
 app.use('/api/payments', paymentRoutes);
 app.use('/api/recommendations', recommendationRoutes);
+app.use('/api/stats', statsRoutes);           // ✅ ADDED - Analytics routes
+app.use('/api/users', userRoutes);            // ✅ ADDED - User management routes
 
 // ======================
 // ERROR HANDLING
@@ -189,7 +195,6 @@ process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);
 });
 
-// FIXED: Added missing closing parenthesis
 process.on('uncaughtException', (err) => {
   logger.error('Uncaught Exception:', err);
 });

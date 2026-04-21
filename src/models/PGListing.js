@@ -124,7 +124,7 @@ const PGListingSchema = new mongoose.Schema({
     default: 0
   },
   
-  // ✅ DEMAND METER FIELDS (ADD THESE)
+  // DEMAND METER FIELDS
   views: {
     type: Number,
     default: 0
@@ -216,14 +216,14 @@ PGListingSchema.methods.getMapCoordinates = function() {
   return null;
 };
 
-// ✅ Method to increment view count
+// Method to increment view count
 PGListingSchema.methods.incrementViews = async function() {
   this.views += 1;
   this.lastViewUpdate = new Date();
   return await this.save();
 };
 
-// ✅ Method to increment booking count
+// Method to increment booking count
 PGListingSchema.methods.incrementBookings = async function() {
   this.weeklyBookings += 1;
   this.monthlyBookings += 1;
@@ -239,14 +239,14 @@ PGListingSchema.index({ price: 1 });
 PGListingSchema.index({ published: 1 });
 PGListingSchema.index({ rating: -1 });
 PGListingSchema.index({ createdAt: -1 });
-PGListingSchema.index({ views: -1 }); // ✅ For popular sorting
-PGListingSchema.index({ weeklyBookings: -1 }); // ✅ For trending sorting
+PGListingSchema.index({ views: -1 });
+PGListingSchema.index({ weeklyBookings: -1 });
 PGListingSchema.index({ location: '2dsphere' });
 
 // Compound indexes for common queries
 PGListingSchema.index({ city: 1, published: 1, price: 1 });
 PGListingSchema.index({ type: 1, city: 1, published: 1 });
-PGListingSchema.index({ published: 1, views: -1 }); // ✅ For popular PGs
+PGListingSchema.index({ published: 1, views: -1 });
 
 // Text search index
 PGListingSchema.index({ 
@@ -258,4 +258,6 @@ PGListingSchema.index({
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 
+// ✅ CRITICAL FIX: Export both names - PG for wishlist compatibility
 module.exports = PGListing;
+module.exports.PG = PGListing;  // This line fixes the wishlist error!
