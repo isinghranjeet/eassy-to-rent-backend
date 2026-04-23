@@ -86,6 +86,32 @@ const PGListingSchema = new mongoose.Schema({
     type: String
   }],
   
+  // ✅ NEW: Virtual Tour Fields
+  videoUrl: {
+    type: String,
+    default: '',
+    validate: {
+      validator: function(v) {
+        if (!v) return true;
+        // Validate YouTube, Vimeo URLs
+        return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|vimeo\.com)\/.+$/.test(v);
+      },
+      message: 'Invalid video URL. Please provide a valid YouTube or Vimeo URL'
+    }
+  },
+  virtualTour: {
+    type: String,
+    default: '',
+    validate: {
+      validator: function(v) {
+        if (!v) return true;
+        // Validate Matterport, Kuula, or other 3D tour URLs
+        return /^(https?:\/\/).+\.(com|org|net)\/.+$/.test(v);
+      },
+      message: 'Invalid virtual tour URL'
+    }
+  },
+  
   // Features
   amenities: [{
     type: String
@@ -205,6 +231,54 @@ PGListingSchema.virtual('lng').get(function() {
   return this.coordinates?.lng || this.location?.coordinates?.[0] || null;
 });
 
+// ✅ NEW: Virtual to get video embed URL
+PGListingSchema.virtual('videoEmbedUrl').get(function() {
+  if (!this.videoUrl) return null;
+  
+  let embedUrl = this.videoUrl;
+  
+  // Convert YouTube URLs to embed format
+  if (embedUrl.includes('youtube.com/watch?v=')) {
+    embedUrl = embedUrl.replace('watch?v=', 'embed/');
+  } else if (embedUrl.includes('youtu.be/')) {
+    const videoId = embedUrl.split('youtu.be/')[1]?.split('?')[0];
+    embedUrl = `https://www.youtube.com/embed/${videoId}`;
+  } else if (embedUrl.includes('vimeo.com/') && !embedUrl.includes('player.vimeo.com')) {
+    const videoId = embedUrl.split('vimeo.com/')[1]?.split('?')[0];
+    embedUrl = `https://player.vimeo.com/video/${videoId}`;
+  }
+  
+  return embedUrl;
+});
+
+// ✅ NEW: Virtual to check if virtual tour exists
+PGListingSchema.virtual('hasVirtualTour').get(function() {
+  return !!(this.videoUrl || this.virtualTour);
+});
+
+// ✅ NEW: Virtual to get virtual tour type
+PGListingSchema.virtual('virtualTourType').get(function() {
+  if (this.videoUrl) {
+    if (this.videoUrl.includes('youtube') || this.videoUrl.includes('youtu.be')) {
+      return 'youtube';
+    }
+    if (this.videoUrl.includes('vimeo')) {
+      return 'vimeo';
+    }
+    return 'video';
+  }
+  if (this.virtualTour) {
+    if (this.virtualTour.includes('matterport')) {
+      return 'matterport';
+    }
+    if (this.virtualTour.includes('kuula')) {
+      return 'kuula';
+    }
+    return '3d-tour';
+  }
+  return null;
+});
+
 // Helper method to get formatted coordinates for frontend
 PGListingSchema.methods.getMapCoordinates = function() {
   const lat = this.coordinates?.lat || this.location?.coordinates?.[1];
@@ -230,6 +304,13 @@ PGListingSchema.methods.incrementBookings = async function() {
   return await this.save();
 };
 
+// ✅ NEW: Method to update virtual tour
+PGListingSchema.methods.setVirtualTour = async function(videoUrl, virtualTour) {
+  if (videoUrl !== undefined) this.videoUrl = videoUrl;
+  if (virtualTour !== undefined) this.virtualTour = virtualTour;
+  return await this.save();
+};
+
 // Indexes for faster queries
 PGListingSchema.index({ slug: 1 });
 PGListingSchema.index({ name: 1 });
@@ -242,11 +323,17 @@ PGListingSchema.index({ createdAt: -1 });
 PGListingSchema.index({ views: -1 });
 PGListingSchema.index({ weeklyBookings: -1 });
 PGListingSchema.index({ location: '2dsphere' });
+PGListingSchema.index({ videoUrl: 1 });
+PGListingSchema.index({ virtualTour: 1 });
 
 // Compound indexes for common queries
 PGListingSchema.index({ city: 1, published: 1, price: 1 });
 PGListingSchema.index({ type: 1, city: 1, published: 1 });
 PGListingSchema.index({ published: 1, views: -1 });
+
+// ✅ NEW: Compound index for virtual tour filter
+PGListingSchema.index({ published: 1, videoUrl: 1 });
+PGListingSchema.index({ featured: 1, videoUrl: 1 });
 
 // Text search index
 PGListingSchema.index({ 
@@ -260,4 +347,4 @@ const PGListing = mongoose.model('PGListing', PGListingSchema);
 
 // ✅ CRITICAL FIX: Export both names - PG for wishlist compatibility
 module.exports = PGListing;
-module.exports.PG = PGListing;  // This line fixes the wishlist error!
+module.exports.PG = PGListing;

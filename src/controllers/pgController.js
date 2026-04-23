@@ -39,6 +39,25 @@ const getCoordinatesByCity = (city) => {
   return cityCoordinates[cityKey] || { lat: 30.7333, lng: 76.7794 };
 };
 
+// Helper function to convert YouTube URL to embed URL
+const getYouTubeEmbedUrl = (url) => {
+  if (!url) return null;
+  
+  let embedUrl = url;
+  
+  if (url.includes('youtube.com/watch?v=')) {
+    embedUrl = url.replace('watch?v=', 'embed/');
+  } else if (url.includes('youtu.be/')) {
+    const videoId = url.split('youtu.be/')[1]?.split('?')[0];
+    embedUrl = `https://www.youtube.com/embed/${videoId}`;
+  } else if (url.includes('vimeo.com/') && !url.includes('player.vimeo.com')) {
+    const videoId = url.split('vimeo.com/')[1]?.split('?')[0];
+    embedUrl = `https://player.vimeo.com/video/${videoId}`;
+  }
+  
+  return embedUrl;
+};
+
 // @desc    Get all PG listings
 // @route   GET /api/pg
 // @access  Public
@@ -56,6 +75,7 @@ exports.getPGListings = async (req, res, next) => {
       maxPrice,
       city,
       availability,
+      hasVirtualTour,
       sort = '-createdAt',
       page = 1,
       limit = 20
@@ -63,7 +83,6 @@ exports.getPGListings = async (req, res, next) => {
     
     let query = {};
     
-    // Build query
     if (type && type !== 'all') query.type = type;
     if (published === 'true') query.published = true;
     if (published === 'false') query.published = false;
@@ -72,14 +91,19 @@ exports.getPGListings = async (req, res, next) => {
     if (city) query.city = new RegExp(city, 'i');
     if (availability) query.availability = availability;
     
-    // Price range filter
+    if (hasVirtualTour === 'true') {
+      query.$or = [
+        { videoUrl: { $ne: '', $exists: true } },
+        { virtualTour: { $ne: '', $exists: true } }
+      ];
+    }
+    
     if (minPrice || maxPrice) {
       query.price = {};
       if (minPrice) query.price.$gte = Number(minPrice);
       if (maxPrice) query.price.$lte = Number(maxPrice);
     }
     
-    // Search filter
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -98,9 +122,12 @@ exports.getPGListings = async (req, res, next) => {
       .skip(skip)
       .limit(limitNum);
 
-    // Ensure coordinates are present
     listings = listings.map(listing => {
       const listingObj = listing.toObject();
+      
+      listingObj.hasVirtualTour = !!(listingObj.videoUrl || listingObj.virtualTour);
+      listingObj.videoEmbedUrl = getYouTubeEmbedUrl(listingObj.videoUrl);
+      listingObj.virtualTourType = listingObj.videoUrl ? 'youtube' : listingObj.virtualTour ? '3d-tour' : null;
       
       let hasValidCoords = false;
       
@@ -167,12 +194,16 @@ exports.getPGListing = async (req, res, next) => {
     }
     
     const listingObj = listing.toObject();
+    
+    listingObj.hasVirtualTour = !!(listingObj.videoUrl || listingObj.virtualTour);
+    listingObj.videoEmbedUrl = getYouTubeEmbedUrl(listingObj.videoUrl);
+    listingObj.virtualTourType = listingObj.videoUrl ? 'youtube' : listingObj.virtualTour ? '3d-tour' : null;
+    
     if (!listingObj.coordinates || listingObj.coordinates.lat === 0) {
       const defaultCoords = getCoordinatesByCity(listingObj.city);
       listingObj.coordinates = defaultCoords;
     }
     
-    // Add demand meter data
     const views = listing.views || 0;
     const weeklyBookings = listing.weeklyBookings || 0;
     
@@ -217,6 +248,11 @@ exports.getPGBySlug = async (req, res, next) => {
     }
     
     const listingObj = listing.toObject();
+    
+    listingObj.hasVirtualTour = !!(listingObj.videoUrl || listingObj.virtualTour);
+    listingObj.videoEmbedUrl = getYouTubeEmbedUrl(listingObj.videoUrl);
+    listingObj.virtualTourType = listingObj.videoUrl ? 'youtube' : listingObj.virtualTour ? '3d-tour' : null;
+    
     if (!listingObj.coordinates || listingObj.coordinates.lat === 0) {
       const defaultCoords = getCoordinatesByCity(listingObj.city);
       listingObj.coordinates = defaultCoords;
@@ -291,6 +327,8 @@ exports.createPGListing = async (req, res, next) => {
       views: 0,
       weeklyBookings: 0,
       monthlyBookings: 0,
+      videoUrl: req.body.videoUrl || '',
+      virtualTour: req.body.virtualTour || '',
     };
 
     const listing = await PGListing.create(listingData);
@@ -336,6 +374,13 @@ exports.updatePGListing = async (req, res, next) => {
 
     const updatePayload = { ...req.body };
 
+    if (req.body.videoUrl !== undefined) {
+      updatePayload.videoUrl = req.body.videoUrl;
+    }
+    if (req.body.virtualTour !== undefined) {
+      updatePayload.virtualTour = req.body.virtualTour;
+    }
+
     if (req.body.lat && req.body.lng) {
       updatePayload.coordinates = { lat: parseFloat(req.body.lat), lng: parseFloat(req.body.lng) };
     } else if (req.body.city && req.body.city !== listing.city) {
@@ -366,9 +411,14 @@ exports.updatePGListing = async (req, res, next) => {
       }
     );
 
+    const responseData = listing.toObject();
+    responseData.hasVirtualTour = !!(responseData.videoUrl || responseData.virtualTour);
+    responseData.videoEmbedUrl = getYouTubeEmbedUrl(responseData.videoUrl);
+    responseData.virtualTourType = responseData.videoUrl ? 'youtube' : responseData.virtualTour ? '3d-tour' : null;
+
     return successResponse(res, {
       message: 'PG listing updated successfully',
-      data: listing,
+      data: responseData,
     });
   } catch (error) {
     if (error.name === 'ValidationError') {
@@ -475,6 +525,13 @@ exports.getStats = async (req, res, next) => {
     const featured = await PGListing.countDocuments({ featured: true });
     const verified = await PGListing.countDocuments({ verified: true });
     
+    const withVirtualTour = await PGListing.countDocuments({
+      $or: [
+        { videoUrl: { $ne: '', $exists: true } },
+        { virtualTour: { $ne: '', $exists: true } }
+      ]
+    });
+    
     const boys = await PGListing.countDocuments({ type: 'boys' });
     const girls = await PGListing.countDocuments({ type: 'girls' });
     const coed = await PGListing.countDocuments({ type: 'co-ed' });
@@ -487,6 +544,7 @@ exports.getStats = async (req, res, next) => {
         draft: total - published,
         featured,
         verified,
+        withVirtualTour,
         boys,
         girls,
         coed,
@@ -530,12 +588,18 @@ exports.searchPGListings = async (req, res, next) => {
     query.published = true;
     
     const listings = await PGListing.find(query).sort('-createdAt').limit(20);
+    
+    const items = listings.map(pg => ({
+      ...pg.toObject(),
+      hasVirtualTour: !!(pg.videoUrl || pg.virtualTour),
+      videoEmbedUrl: getYouTubeEmbedUrl(pg.videoUrl)
+    }));
 
     return successResponse(res, {
       message: 'Search completed',
       data: {
         count: listings.length,
-        items: listings,
+        items,
       },
     });
   } catch (error) {
@@ -678,9 +742,6 @@ exports.getPGsByCityForMap = async (req, res, next) => {
 
 // ========== DEMAND METER FEATURES ==========
 
-// @desc    Increment PG view count
-// @route   POST /api/pg/:id/increment-view
-// @access  Public
 exports.incrementViewCount = async (req, res, next) => {
   try {
     const pg = await PGListing.findById(req.params.id);
@@ -709,9 +770,6 @@ exports.incrementViewCount = async (req, res, next) => {
   }
 };
 
-// @desc    Get demand meter data for a PG
-// @route   GET /api/pg/:id/demand-meter
-// @access  Public
 exports.getDemandMeter = async (req, res, next) => {
   try {
     const pg = await PGListing.findById(req.params.id)
@@ -772,9 +830,6 @@ exports.getDemandMeter = async (req, res, next) => {
   }
 };
 
-// @desc    Get popular PGs (sorted by views/bookings)
-// @route   GET /api/pg/popular
-// @access  Public
 exports.getPopularPGs = async (req, res, next) => {
   try {
     const { limit = 10 } = req.query;
@@ -797,9 +852,6 @@ exports.getPopularPGs = async (req, res, next) => {
   }
 };
 
-// @desc    Update booking count (call when booking is confirmed)
-// @route   POST /api/pg/:id/increment-booking
-// @access  Private/Admin
 exports.incrementBookingCount = async (req, res, next) => {
   try {
     const pg = await PGListing.findById(req.params.id);
@@ -1084,5 +1136,102 @@ exports.getPGDetail = async (req, res, next) => {
       });
     }
     return next(error);
+  }
+};
+
+// ========== VIRTUAL TOUR BULK OPERATIONS ==========
+
+exports.bulkUpdateVirtualTour = async (req, res, next) => {
+  try {
+    const { ids, videoUrl, virtualTour } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Please provide an array of property IDs'
+      });
+    }
+    
+    const updateData = {};
+    if (videoUrl !== undefined) updateData.videoUrl = videoUrl;
+    if (virtualTour !== undefined) updateData.virtualTour = virtualTour;
+    
+    if (Object.keys(updateData).length === 0) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Please provide videoUrl or virtualTour to update'
+      });
+    }
+    
+    updateData.updatedAt = Date.now();
+    
+    const result = await PGListing.updateMany(
+      { _id: { $in: ids } },
+      { $set: updateData }
+    );
+    
+    return successResponse(res, {
+      message: `Virtual tour updated for ${result.modifiedCount} properties`,
+      data: {
+        matchedCount: result.matchedCount,
+        modifiedCount: result.modifiedCount
+      }
+    });
+  } catch (error) {
+    console.error('Bulk update virtual tour error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: error.message
+    });
+  }
+};
+
+exports.getPropertiesWithVirtualTour = async (req, res, next) => {
+  try {
+    const { limit = 20, page = 1 } = req.query;
+    
+    const query = {
+      published: true,
+      $or: [
+        { videoUrl: { $ne: '', $exists: true } },
+        { virtualTour: { $ne: '', $exists: true } }
+      ]
+    };
+    
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+    
+    const pgs = await PGListing.find(query)
+      .select('_id name slug city price type images rating videoUrl virtualTour')
+      .limit(limitNum)
+      .skip(skip)
+      .sort({ createdAt: -1 });
+    
+    const total = await PGListing.countDocuments(query);
+    
+    const items = pgs.map(pg => ({
+      ...pg.toObject(),
+      hasVirtualTour: true,
+      videoEmbedUrl: getYouTubeEmbedUrl(pg.videoUrl),
+      virtualTourType: pg.videoUrl ? 'youtube' : '3d-tour'
+    }));
+    
+    return successResponse(res, {
+      message: 'Properties with virtual tour fetched successfully',
+      data: {
+        count: items.length,
+        total,
+        page: pageNum,
+        pages: Math.ceil(total / limitNum),
+        items
+      }
+    });
+  } catch (error) {
+    console.error('Get properties with virtual tour error:', error);
+    return errorResponse(res, {
+      statusCode: 500,
+      message: error.message
+    });
   }
 };

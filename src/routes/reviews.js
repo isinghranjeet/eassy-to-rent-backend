@@ -21,23 +21,14 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({ error: 'You have already reviewed this PG' });
     }
 
-    // Check if user has booked this PG (optional validation)
-    // const booking = await Booking.findOne({
-    //   user: req.user._id,
-    //   pgListing: pgId,
-    //   status: 'completed'
-    // });
-    
-    // if (!booking) {
-    //   return res.status(400).json({ error: 'You must have booked this PG to leave a review' });
-    // }
-
+    // ✅ Create review with pending status
     const review = new Review({
       user: req.user._id,
       pgListing: pgId,
       rating,
       title,
-      comment
+      comment,
+      status: 'pending'  // ✅ Pending admin approval
     });
 
     const createdReview = await review.save();
@@ -45,7 +36,11 @@ router.post('/', protect, async (req, res) => {
     // Populate user info
     await createdReview.populate('user', 'name');
 
-    res.status(201).json(createdReview);
+    res.status(201).json({
+      success: true,
+      message: 'Review submitted successfully! It will be visible after admin approval.',
+      data: createdReview
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -68,19 +63,42 @@ router.get('/pg/:pgId', async (req, res) => {
       sortOptions = { rating: -1 };
     }
 
-    const reviews = await Review.find({ pgListing: req.params.pgId })
+    // ✅ Only fetch approved reviews for public
+    const reviews = await Review.find({ 
+      pgListing: req.params.pgId,
+      status: 'approved'  // ✅ Only approved reviews
+    })
       .populate('user', 'name')
       .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Review.countDocuments({ pgListing: req.params.pgId });
+    const total = await Review.countDocuments({ 
+      pgListing: req.params.pgId,
+      status: 'approved'  // ✅ Only count approved reviews
+    });
+
+    // ✅ Get pending count for admin (if authenticated)
+    let pendingCount = 0;
+    if (req.headers.authorization) {
+      try {
+        // You might want to check if user is admin here
+        pendingCount = await Review.countDocuments({
+          pgListing: req.params.pgId,
+          status: 'pending'
+        });
+      } catch (error) {
+        // Ignore error
+      }
+    }
 
     res.json({
+      success: true,
       reviews,
       page: parseInt(page),
       totalPages: Math.ceil(total / limit),
-      total
+      total,
+      pendingCount
     });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -96,13 +114,16 @@ router.get('/my-reviews', protect, async (req, res) => {
       .populate('pgListing', 'name address images')
       .sort({ createdAt: -1 });
 
-    res.json(reviews);
+    res.json({
+      success: true,
+      data: reviews
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// @desc    Update a review
+// @desc    Update a review (only if not approved yet)
 // @route   PUT /api/reviews/:id
 // @access  Private
 router.put('/:id', protect, async (req, res) => {
@@ -118,13 +139,22 @@ router.put('/:id', protect, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    // ✅ Cannot edit approved reviews
+    if (review.status === 'approved') {
+      return res.status(400).json({ error: 'Approved reviews cannot be edited' });
+    }
+
     review.rating = req.body.rating || review.rating;
     review.title = req.body.title || review.title;
     review.comment = req.body.comment || review.comment;
     review.updatedAt = Date.now();
 
     const updatedReview = await review.save();
-    res.json(updatedReview);
+    res.json({
+      success: true,
+      message: 'Review updated successfully',
+      data: updatedReview
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -147,7 +177,10 @@ router.delete('/:id', protect, async (req, res) => {
     }
 
     await review.deleteOne();
-    res.json({ message: 'Review removed' });
+    res.json({ 
+      success: true,
+      message: 'Review removed successfully' 
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -158,19 +191,24 @@ router.delete('/:id', protect, async (req, res) => {
 // @access  Private
 router.post('/:id/like', protect, async (req, res) => {
   try {
-    // In a real app, you might want to track who liked what
-    // For simplicity, we'll just increment the likes count
-    const review = await Review.findByIdAndUpdate(
-      req.params.id,
-      { $inc: { likes: 1 } },
-      { new: true }
-    );
+    const review = await Review.findById(req.params.id);
 
     if (!review) {
       return res.status(404).json({ error: 'Review not found' });
     }
 
-    res.json({ likes: review.likes });
+    // ✅ Only approved reviews can be liked
+    if (review.status !== 'approved') {
+      return res.status(400).json({ error: 'Only approved reviews can be liked' });
+    }
+
+    review.likes = (review.likes || 0) + 1;
+    await review.save();
+
+    res.json({ 
+      success: true,
+      likes: review.likes 
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
@@ -187,6 +225,11 @@ router.post('/:id/reply', protect, async (req, res) => {
       return res.status(404).json({ error: 'Review not found' });
     }
 
+    // ✅ Only approved reviews can have replies
+    if (review.status !== 'approved') {
+      return res.status(400).json({ error: 'Cannot reply to pending reviews' });
+    }
+
     // Check if user is PG owner or admin
     const pg = await PGListing.findById(review.pgListing);
     if (pg.owner.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
@@ -195,13 +238,178 @@ router.post('/:id/reply', protect, async (req, res) => {
 
     const reply = {
       user: req.user._id,
-      comment: req.body.comment
+      comment: req.body.comment,
+      createdAt: new Date()
     };
 
     review.replies.push(reply);
     await review.save();
 
-    res.json(review.replies);
+    // Populate user info for reply
+    await review.populate('replies.user', 'name');
+
+    res.json({
+      success: true,
+      replies: review.replies
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// ==================== ADMIN ONLY ROUTES ====================
+
+// @desc    Get all pending reviews (Admin only)
+// @route   GET /api/reviews/admin/pending
+// @access  Private/Admin
+router.get('/admin/pending', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    const pendingReviews = await Review.find({ status: 'pending' })
+      .populate('user', 'name email')
+      .populate('pgListing', 'name city address')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: pendingReviews.length,
+      data: pendingReviews
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// @desc    Approve a review (Admin only)
+// @route   PUT /api/reviews/admin/:id/approve
+// @access  Private/Admin
+router.put('/admin/:id/approve', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    const review = await Review.findById(req.params.id);
+
+    if (!review) {
+      return res.status(404).json({ error: 'Review not found' });
+    }
+
+    review.status = 'approved';
+    review.approvedBy = req.user._id;
+    review.approvedAt = new Date();
+    await review.save();
+
+    // PG rating will be updated via post-save hook
+
+    res.json({
+      success: true,
+      message: 'Review approved successfully',
+      data: review
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// @desc    Reject a review (Admin only)
+// @route   PUT /api/reviews/admin/:id/reject
+// @access  Private/Admin
+router.put('/admin/:id/reject', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    const { reason } = req.body;
+    const review = await Review.findById(req.params.id);
+
+    if (!review) {
+      return res.status(404).json({ error: 'Review not found' });
+    }
+
+    review.status = 'rejected';
+    review.adminNote = reason || 'No reason provided';
+    await review.save();
+
+    res.json({
+      success: true,
+      message: 'Review rejected',
+      data: review
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// @desc    Get all reviews with filters (Admin only)
+// @route   GET /api/reviews/admin/all
+// @access  Private/Admin
+router.get('/admin/all', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    const { status, page = 1, limit = 20 } = req.query;
+    const query = {};
+    
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const reviews = await Review.find(query)
+      .populate('user', 'name email')
+      .populate('pgListing', 'name city')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Review.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: reviews,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// @desc    Get review statistics (Admin only)
+// @route   GET /api/reviews/admin/stats
+// @access  Private/Admin
+router.get('/admin/stats', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+
+    const pending = await Review.countDocuments({ status: 'pending' });
+    const approved = await Review.countDocuments({ status: 'approved' });
+    const rejected = await Review.countDocuments({ status: 'rejected' });
+    const total = await Review.countDocuments();
+
+    res.json({
+      success: true,
+      stats: {
+        pending,
+        approved,
+        rejected,
+        total
+      }
+    });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

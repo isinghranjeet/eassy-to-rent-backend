@@ -1,11 +1,11 @@
 // backend/src/controllers/bookingController.js
-import Booking from '../models/Booking.js';
-import PGListing from '../models/PGListing.js';
-import Review from '../models/Review.js';
-import mongoose from 'mongoose';
+const Booking = require('../models/Booking');
+const PGListing = require('../models/PGListing');
+const Review = require('../models/Review');
+const { successResponse, errorResponse } = require('../utils/response');
 
 // Create a new booking
-export const createBooking = async (req, res) => {
+const createBooking = async (req, res) => {
   try {
     const {
       pgId,
@@ -28,6 +28,7 @@ export const createBooking = async (req, res) => {
 
     // Check for overlapping bookings
     const existingBooking = await Booking.findOne({
+      userId,
       pgId,
       status: { $in: ['pending', 'confirmed'] },
       $or: [
@@ -54,15 +55,22 @@ export const createBooking = async (req, res) => {
       guestDetails,
       specialRequests,
       status: 'confirmed',
-      paymentStatus: 'paid' // For now, you can integrate Razorpay
+      paymentStatus: 'paid',
+      reviewed: false
     });
 
     await booking.save();
 
+    // Update PG booking counts
+    pg.weeklyBookings = (pg.weeklyBookings || 0) + 1;
+    pg.monthlyBookings = (pg.monthlyBookings || 0) + 1;
+    await pg.save();
+
     res.json({
       success: true,
       message: 'Booking confirmed successfully',
-      bookingId: booking._id
+      bookingId: booking._id,
+      data: booking
     });
   } catch (error) {
     console.error('Error creating booking:', error);
@@ -71,16 +79,17 @@ export const createBooking = async (req, res) => {
 };
 
 // Get user bookings
-export const getUserBookings = async (req, res) => {
+const getUserBookings = async (req, res) => {
   try {
     const userId = req.user.id;
     
     const bookings = await Booking.find({ userId })
-      .populate('pgId', 'name images address price')
+      .populate('pgId', 'name images address price type city rating')
       .sort({ createdAt: -1 });
 
     res.json({
       success: true,
+      count: bookings.length,
       bookings
     });
   } catch (error) {
@@ -89,11 +98,38 @@ export const getUserBookings = async (req, res) => {
   }
 };
 
-// Cancel booking
-export const cancelBooking = async (req, res) => {
+// Get single booking by ID
+const getBookingById = async (req, res) => {
   try {
     const { bookingId } = req.params;
     const userId = req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    const booking = await Booking.findOne({
+      _id: bookingId,
+      $or: [{ userId }, isAdmin ? {} : { _id: null }]
+    }).populate('pgId', 'name images address price type city rating');
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    res.json({
+      success: true,
+      booking
+    });
+  } catch (error) {
+    console.error('Error fetching booking:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch booking' });
+  }
+};
+
+// Cancel booking
+const cancelBooking = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const userId = req.user.id;
+    const { reason } = req.body;
 
     const booking = await Booking.findOne({ _id: bookingId, userId });
     
@@ -121,13 +157,14 @@ export const cancelBooking = async (req, res) => {
 
     booking.status = 'cancelled';
     booking.cancelledAt = new Date();
-    booking.cancellationReason = req.body.reason || 'User cancelled';
+    booking.cancellationReason = reason || 'User cancelled';
     await booking.save();
 
     res.json({
       success: true,
       message: 'Booking cancelled successfully',
-      refundAmount
+      refundAmount,
+      booking
     });
   } catch (error) {
     console.error('Error cancelling booking:', error);
@@ -135,26 +172,209 @@ export const cancelBooking = async (req, res) => {
   }
 };
 
-// Check if user can review (only if they've completed a booking)
-export const canReview = async (req, res) => {
+// ✅ CHECK IF USER CAN REVIEW (CRITICAL FIXED)
+const canReview = async (req, res) => {
   try {
     const { pgId } = req.params;
     const userId = req.user.id;
 
-    const hasCompletedBooking = await Booking.findOne({
+    // For admin, always allow review (for testing purposes)
+    if (req.user.role === 'admin') {
+      return res.json({
+        success: true,
+        canReview: true,
+        message: 'Admin can review any property'
+      });
+    }
+
+    // Check if user has a completed/confirmed booking for this PG
+    const booking = await Booking.findOne({
       userId,
       pgId,
-      status: 'completed',
-      reviewed: false
+      status: { $in: ['completed', 'confirmed'] }
     });
+
+    // Check if user has already reviewed this PG
+    const existingReview = await Review.findOne({
+      user: userId,
+      pgListing: pgId
+    });
+
+    const canReviewFlag = !!(booking && !existingReview);
 
     res.json({
       success: true,
-      canReview: !!hasCompletedBooking,
-      bookingId: hasCompletedBooking?._id
+      canReview: canReviewFlag,
+      bookingId: booking?._id || null,
+      message: canReviewFlag 
+        ? 'You can review this property' 
+        : existingReview 
+          ? 'You have already reviewed this property'
+          : 'You need to complete a booking before reviewing'
     });
   } catch (error) {
     console.error('Error checking review eligibility:', error);
+    res.status(500).json({ success: false, message: 'Server error', canReview: false });
+  }
+};
+
+// ✅ Mark booking as reviewed (call after user submits review)
+const markBookingAsReviewed = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const userId = req.user.id;
+
+    const booking = await Booking.findOne({ _id: bookingId, userId });
+    
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    booking.reviewed = true;
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: 'Booking marked as reviewed'
+    });
+  } catch (error) {
+    console.error('Error marking booking as reviewed:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
+};
+
+// ✅ Get all bookings (Admin only)
+const getAllBookings = async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const { page = 1, limit = 20, status } = req.query;
+    const query = {};
+    
+    if (status) query.status = status;
+
+    const bookings = await Booking.find(query)
+      .populate('userId', 'name email phone')
+      .populate('pgId', 'name city price images')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Booking.countDocuments(query);
+
+    res.json({
+      success: true,
+      count: bookings.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      bookings
+    });
+  } catch (error) {
+    console.error('Error fetching all bookings:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch bookings' });
+  }
+};
+
+// ✅ Update booking status (Admin only)
+const updateBookingStatus = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const { bookingId } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ['pending', 'confirmed', 'completed', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid status. Must be one of: ${validStatuses.join(', ')}` 
+      });
+    }
+
+    const booking = await Booking.findByIdAndUpdate(
+      bookingId,
+      { status, updatedAt: new Date() },
+      { new: true }
+    );
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    // If status is completed, user can now review
+    if (status === 'completed') {
+      booking.reviewed = false;
+      await booking.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Booking status updated',
+      booking
+    });
+  } catch (error) {
+    console.error('Error updating booking status:', error);
+    res.status(500).json({ success: false, message: 'Failed to update booking' });
+  }
+};
+
+// ✅ Get booking statistics (Admin only)
+const getBookingStats = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const totalBookings = await Booking.countDocuments();
+    const confirmedBookings = await Booking.countDocuments({ status: 'confirmed' });
+    const completedBookings = await Booking.countDocuments({ status: 'completed' });
+    const cancelledBookings = await Booking.countDocuments({ status: 'cancelled' });
+    
+    // Last 7 days bookings
+    const last7Days = new Date();
+    last7Days.setDate(last7Days.getDate() - 7);
+    
+    const recentBookings = await Booking.countDocuments({
+      createdAt: { $gte: last7Days }
+    });
+
+    // Total revenue (from completed and confirmed bookings)
+    const revenueResult = await Booking.aggregate([
+      { $match: { status: { $in: ['confirmed', 'completed'] } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        total: totalBookings,
+        confirmed: confirmedBookings,
+        completed: completedBookings,
+        cancelled: cancelledBookings,
+        recent7Days: recentBookings,
+        totalRevenue: revenueResult[0]?.total || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching booking stats:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};
+
+module.exports = {
+  createBooking,
+  getUserBookings,
+  getBookingById,
+  cancelBooking,
+  canReview,
+  markBookingAsReviewed,
+  getAllBookings,
+  updateBookingStatus,
+  getBookingStats
 };

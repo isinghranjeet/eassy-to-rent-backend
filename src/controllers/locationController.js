@@ -29,6 +29,7 @@ const getLocations = async (req, res) => {
     
     res.json({ success: true, data: locations });
   } catch (error) {
+    console.error('Get locations error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -38,10 +39,11 @@ const getLocations = async (req, res) => {
 // @access  Public
 const getPopularLocations = async (req, res) => {
   try {
-    const { limit = 10 } = req.query;
+    const { limit = 8 } = req.query;
+    const limitNum = parseInt(limit);
     
     const locations = await PG.aggregate([
-      { $match: { published: true } },
+      { $match: { published: true, city: { $ne: null, $exists: true, $ne: '' } } },
       {
         $group: {
           _id: "$city",
@@ -54,15 +56,17 @@ const getPopularLocations = async (req, res) => {
           name: "$_id",
           slug: { $toLower: { $replaceAll: { input: "$_id", find: " ", replacement: "-" } } },
           pgCount: "$count",
-          image: { $ifNull: ["$image", "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500"] }
+          image: { $ifNull: ["$image", "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500"] },
+          _id: 0
         }
       },
       { $sort: { pgCount: -1 } },
-      { $limit: parseInt(limit) }
+      { $limit: limitNum }
     ]);
     
     res.json({ success: true, data: locations });
   } catch (error) {
+    console.error('Get popular locations error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -85,7 +89,8 @@ const searchLocations = async (req, res) => {
         $project: {
           name: "$_id",
           slug: { $toLower: { $replaceAll: { input: "$_id", find: " ", replacement: "-" } } },
-          pgCount: "$count"
+          pgCount: "$count",
+          _id: 0
         }
       },
       { $limit: parseInt(limit) }
@@ -93,6 +98,7 @@ const searchLocations = async (req, res) => {
     
     res.json({ success: true, data: locations });
   } catch (error) {
+    console.error('Search locations error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -112,7 +118,7 @@ const getLocationBySlug = async (req, res) => {
       city: { $regex: new RegExp(`^${cityName}$`, 'i') }
     };
     
-    if (type) pgQuery.type = type;
+    if (type && type !== 'all') pgQuery.type = type;
     if (minPrice || maxPrice) {
       pgQuery.price = {};
       if (minPrice) pgQuery.price.$gte = parseInt(minPrice);
@@ -122,11 +128,16 @@ const getLocationBySlug = async (req, res) => {
     let pgSort = { price: 1 };
     if (sort === "price_desc") pgSort = { price: -1 };
     else if (sort === "rating") pgSort = { rating: -1 };
+    else if (sort === "newest") pgSort = { createdAt: -1 };
+    
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
     
     const pgs = await PG.find(pgQuery)
       .sort(pgSort)
-      .limit(parseInt(limit))
-      .skip((parseInt(page) - 1) * parseInt(limit));
+      .limit(limitNum)
+      .skip(skip);
     
     const totalPGs = await PG.countDocuments(pgQuery);
     
@@ -139,14 +150,41 @@ const getLocationBySlug = async (req, res) => {
         location: { name: cityName, slug, pgCount: totalPGs, image: locationImage },
         pgs,
         pagination: {
-          currentPage: parseInt(page),
-          totalPages: Math.ceil(totalPGs / parseInt(limit)),
+          currentPage: pageNum,
+          totalPages: Math.ceil(totalPGs / limitNum),
           totalItems: totalPGs,
-          itemsPerPage: parseInt(limit)
+          itemsPerPage: limitNum
         }
       }
     });
   } catch (error) {
+    console.error('Get location by slug error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get PGs by city name (simple version)
+// @route   GET /api/locations/city/:city
+// @access  Public
+const getPGsByCity = async (req, res) => {
+  try {
+    const { city } = req.params;
+    const { limit = 20 } = req.query;
+    
+    const pgs = await PG.find({
+      published: true,
+      city: { $regex: new RegExp(`^${city}$`, 'i') }
+    }).limit(parseInt(limit));
+    
+    res.json({
+      success: true,
+      data: {
+        count: pgs.length,
+        items: pgs
+      }
+    });
+  } catch (error) {
+    console.error('Get PGs by city error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -173,6 +211,7 @@ module.exports = {
   getPopularLocations,
   searchLocations,
   getLocationBySlug,
+  getPGsByCity,
   filterPGsByLocation,
   calculateDistance,
   updateLocationCounts,
