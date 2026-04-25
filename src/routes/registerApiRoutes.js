@@ -15,6 +15,7 @@ function registerApiRoutes(app, routes) {
     statsRoutes,
     userRoutes,
     adminRoutes,
+    contactRoutes,
   } = routes;
 
   app.use('/api/pg', pgRoutes);
@@ -26,6 +27,7 @@ function registerApiRoutes(app, routes) {
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/price-alerts', priceAlertRoutes);
   app.use('/api/blogs', blogRoutes);
+  app.use('/api/contact', contactRoutes);
 
   app.use('/api/payments', paymentRoutes);
   app.use('/api/paymentgateway', paymentRoutes);

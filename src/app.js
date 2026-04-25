@@ -14,6 +14,7 @@ const locationRoutes = require('./routes/locationRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const priceAlertRoutes = require('./routes/priceAlertRoutes');
 const blogRoutes = require('./routes/blogRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 // 🆕 NEW ROUTES
 const adminRoutes = require('./routes/adminRoutes');
@@ -130,23 +131,24 @@ app.get('/', (req, res) => {
   });
 });
 
-registerApiRoutes(app, {
-  pgRoutes,
-  authRoutes,
-  bookingRoutes,
-  reviewRoutes,
-  wishlistRoutes,
-  locationRoutes,
-  notificationRoutes,
-  priceAlertRoutes,
-  blogRoutes,
-  paymentRoutes,
-  advancedPaymentRoutes,
-  recommendationRoutes,
-  statsRoutes,
-  userRoutes,
-  adminRoutes,
-});
+  registerApiRoutes(app, {
+    pgRoutes,
+    authRoutes,
+    bookingRoutes,
+    reviewRoutes,
+    wishlistRoutes,
+    locationRoutes,
+    notificationRoutes,
+    priceAlertRoutes,
+    blogRoutes,
+    contactRoutes,
+    paymentRoutes,
+    advancedPaymentRoutes,
+    recommendationRoutes,
+    statsRoutes,
+    userRoutes,
+    adminRoutes,
+  });
 
 registerWebhookRoutes(app, express);
 

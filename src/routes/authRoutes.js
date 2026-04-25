@@ -15,6 +15,9 @@ router.post('/login', authController.login);
 // Verify login OTP
 router.post('/verify-login-otp', authController.verifyLoginOtp);
 
+// Refresh access token
+router.post('/refresh', authController.refreshToken);
+
 // Forgot password (send OTP)
 router.post('/forgot-password', authController.forgotPassword);
 

@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const Activity = require('../models/Activity');
-const { generateToken } = require('../utils/generateToken');
+const { generateToken, generateRefreshToken } = require('../utils/generateToken');
 const { successResponse, errorResponse } = require('../utils/response');
 const { sendEmail, sendOtpEmail, sendTestEmail } = require('../utils/sendEmail');
 const { sendLoginSuccessEmail } = require('../services/notificationService');
@@ -88,8 +88,13 @@ exports.register = async (req, res, next) => {
       lastLoginIP: req.ip,
     });
 
-    // Generate token
+    // Generate tokens
     const token = generateToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+    
+    // Store refresh token
+    user.refreshToken = refreshToken;
+    await user.save();
 
     // Log registration
     console.log(`New user registered: ${user.email} from IP ${req.ip}`);
@@ -117,6 +122,7 @@ exports.register = async (req, res, next) => {
         role: user.role,
         phone: user.phone,
         token,
+        refreshToken,
       },
     });
   } catch (error) {
@@ -709,6 +715,11 @@ exports.verifyLoginOtp = async (req, res, next) => {
     );
 
     const token = generateToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+    
+    // Store refresh token
+    user.refreshToken = refreshToken;
+    await user.save();
 
     return successResponse(res, {
       message: 'Login successful',
@@ -720,6 +731,7 @@ exports.verifyLoginOtp = async (req, res, next) => {
         phone: user.phone,
         profileImage: user.profileImage,
         token,
+        refreshToken,
         lastLogin: user.lastLogin,
       },
     });
@@ -957,11 +969,17 @@ exports.googleTokenLogin = async (req, res, next) => {
     }
     
     const token = generateToken(user._id, user.role);
+    const refreshToken = generateRefreshToken(user._id);
+    
+    // Store refresh token
+    user.refreshToken = refreshToken;
+    await user.save();
     
     return successResponse(res, {
       message: 'Google login successful',
       data: {
         token,
+        refreshToken,
         user: {
           _id: user._id,
           name: user.name,
@@ -978,5 +996,80 @@ exports.googleTokenLogin = async (req, res, next) => {
       statusCode: 500,
       message: 'Google login failed: ' + error.message
     });
+  }
+};
+
+// @desc    Refresh access token
+// @route   POST /api/auth/refresh
+// @access  Public
+exports.refreshToken = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return errorResponse(res, {
+        statusCode: 400,
+        message: 'Refresh token is required',
+      });
+    }
+
+    // Verify refresh token
+    let decoded;
+    try {
+      const { verifyRefreshToken } = require('../utils/generateToken');
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (err) {
+      console.error('❌ [REFRESH] Invalid refresh token:', err.message);
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'Invalid or expired refresh token',
+      });
+    }
+
+    // Find user with matching refresh token
+    const user = await User.findById(decoded.id).select('+refreshToken');
+
+    if (!user) {
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'User not found',
+      });
+    }
+
+    if (user.refreshToken !== refreshToken) {
+      console.error('❌ [REFRESH] Token mismatch for user:', user.email);
+      return errorResponse(res, {
+        statusCode: 401,
+        message: 'Refresh token revoked',
+      });
+    }
+
+    if (user.status === 'suspended') {
+      return errorResponse(res, {
+        statusCode: 403,
+        message: 'Your account has been suspended',
+      });
+    }
+
+    // Generate new tokens
+    const newAccessToken = generateToken(user._id, user.role);
+    const newRefreshToken = generateRefreshToken(user._id);
+
+    // Store new refresh token
+    user.refreshToken = newRefreshToken;
+    await user.save();
+
+    console.log('✅ [REFRESH] Token refreshed for user:', user.email);
+
+    return successResponse(res, {
+      message: 'Token refreshed successfully',
+      data: {
+        token: newAccessToken,
+        refreshToken: newRefreshToken,
+      },
+    });
+  } catch (error) {
+    console.error('❌ [REFRESH] Error:', error.message);
+    return next(error);
   }
 };

@@ -8,11 +8,31 @@ const generateToken = (id, role = 'user') => {
   return jwt.sign(
     { 
       id, 
-      role 
+      role,
+      type: 'access'
     },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRE || '30d',
+      expiresIn: process.env.JWT_EXPIRE || '7d',
+      issuer: 'pg-finder-api',
+      audience: 'pg-finder-client'
+    }
+  );
+};
+
+const generateRefreshToken = (id) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not defined in environment variables');
+  }
+
+  return jwt.sign(
+    { 
+      id,
+      type: 'refresh'
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_REFRESH_EXPIRE || '30d',
       issuer: 'pg-finder-api',
       audience: 'pg-finder-client'
     }
@@ -32,6 +52,23 @@ const verifyToken = (token) => {
   }
 };
 
+// Verify refresh token
+const verifyRefreshToken = (token) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is not defined in environment variables');
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== 'refresh') {
+      throw new Error('Token is not a refresh token');
+    }
+    return decoded;
+  } catch (error) {
+    throw new Error(`Invalid refresh token: ${error.message}`);
+  }
+};
+
 // Decode token without verification (for debugging)
 const decodeToken = (token) => {
   try {
@@ -43,6 +80,8 @@ const decodeToken = (token) => {
 
 module.exports = { 
   generateToken, 
-  verifyToken, 
+  generateRefreshToken,
+  verifyToken,
+  verifyRefreshToken,
   decodeToken 
 };
