@@ -507,6 +507,7 @@
 const express = require("express");
 const router = express.Router();
 const PGListing = require("../models/PGListing");
+const Activity = require("../models/Activity");
 const { uploadImage } = require("../utils/cloudinary");
 const { protect, ownerOrAdmin } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
@@ -908,6 +909,21 @@ router.post(
 
       console.log("PG listing created:", listing._id);
 
+      // Log activity
+      try {
+        await Activity.create({
+          type: 'PG_CREATED',
+          message: `New PG listing "${listing.name}" added in ${listing.city}`,
+          userId: req.user._id,
+          userName: req.user.name,
+          targetId: listing._id.toString(),
+          targetName: listing.name,
+          metadata: { city: listing.city, type: listing.type, price: listing.price },
+        });
+      } catch (activityErr) {
+        console.error('Activity log error:', activityErr.message);
+      }
+
       res.status(201).json({
         success: true,
         data: listing,
@@ -1113,6 +1129,46 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
       success: false,
       message: "Server error",
       error: error.message,
+    });
+  }
+});
+
+// @desc    Get PG admin stats
+// @route   GET /api/pg/admin/stats
+// @access  Private/Admin
+router.get("/admin/stats", protect, ownerOrAdmin, async (req, res) => {
+  try {
+    const [
+      total,
+      published,
+      verified,
+      featured,
+      pending
+    ] = await Promise.all([
+      PGListing.countDocuments(),
+      PGListing.countDocuments({ published: true }),
+      PGListing.countDocuments({ verified: true }),
+      PGListing.countDocuments({ featured: true }),
+      PGListing.countDocuments({ published: false })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        total,
+        published,
+        verified,
+        featured,
+        pending,
+        cities: []
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching PG stats:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message
     });
   }
 });

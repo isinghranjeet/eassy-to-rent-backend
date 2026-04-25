@@ -17,6 +17,7 @@ router.use(protect);
 
 // Card/Razorpay routes
 router.post('/create-call-credit-order', createCallCreditOrder);
+router.post('/create-order', createCallCreditOrder);
 router.post('/verify-call-credit', verifyCallCreditPayment);
 
 // UPI/QR routes

@@ -105,10 +105,10 @@ const PGListingSchema = new mongoose.Schema({
     validate: {
       validator: function(v) {
         if (!v) return true;
-        // Validate Matterport, Kuula, or other 3D tour URLs
-        return /^(https?:\/\/).+\.(com|org|net)\/.+$/.test(v);
+        // Only accept YouTube URLs (youtube.com or youtu.be)
+        return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(v);
       },
-      message: 'Invalid virtual tour URL'
+      message: 'Invalid virtual tour URL. Only YouTube URLs (youtube.com or youtu.be) are allowed'
     }
   },
   
@@ -134,6 +134,10 @@ const PGListingSchema = new mongoose.Schema({
     default: false
   },
   featured: {
+    type: Boolean,
+    default: false
+  },
+  adminRecommended: {
     type: Boolean,
     default: false
   },

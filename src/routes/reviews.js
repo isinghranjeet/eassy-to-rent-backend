@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Review = require('../models/Review');
 const PGListing = require('../models/PGListing');
+const Activity = require('../models/Activity');
 const { protect } = require('../middleware/authMiddleware');
 
 // @desc    Create a review
@@ -35,6 +36,22 @@ router.post('/', protect, async (req, res) => {
     
     // Populate user info
     await createdReview.populate('user', 'name');
+
+    // Log activity
+    try {
+      const pg = await PGListing.findById(pgId).select('name city').lean();
+      await Activity.create({
+        type: 'REVIEW_PENDING',
+        message: `New ${rating}-star review submitted on ${pg?.name || 'a PG'}`,
+        userId: req.user._id,
+        userName: req.user.name,
+        targetId: createdReview._id.toString(),
+        targetName: pg?.name || 'Unknown PG',
+        metadata: { rating, pgCity: pg?.city, comment: comment?.substring(0, 100) },
+      });
+    } catch (activityErr) {
+      console.error('Activity log error:', activityErr.message);
+    }
 
     res.status(201).json({
       success: true,
@@ -362,11 +379,12 @@ router.get('/admin/all', protect, async (req, res) => {
     }
 
     const skip = (page - 1) * limit;
+    const sortQuery = req.query.sort ? req.query.sort : '-createdAt';
 
     const reviews = await Review.find(query)
       .populate('user', 'name email')
       .populate('pgListing', 'name city')
-      .sort({ createdAt: -1 })
+      .sort(sortQuery)
       .skip(skip)
       .limit(parseInt(limit));
 
@@ -374,12 +392,14 @@ router.get('/admin/all', protect, async (req, res) => {
 
     res.json({
       success: true,
-      data: reviews,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
+      data: {
+        items: reviews,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
       }
     });
   } catch (error) {

@@ -32,6 +32,7 @@
     "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",
     "hpp": "^0.2.3",
+    "joi": "^18.1.2",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
     "mongoose": "^8.21.1",
@@ -45,6 +46,7 @@
     "stripe": "^22.0.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "winston": "^3.19.0",
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {

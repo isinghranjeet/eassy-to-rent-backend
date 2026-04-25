@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const ErrorLog = require('../models/ErrorLog');
 const { errorResponse } = require('../utils/response');
 
 const notFound = (req, res, next) => {
@@ -11,15 +12,31 @@ const notFound = (req, res, next) => {
 const errorHandler = (err, req, res, next) => {
   const statusCode = err.statusCode || err.status || 500;
 
-  logger.error(err.message, {
-    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+  logger.error(err.message || 'Unhandled error', {
+    stack: err.stack,
     path: req.originalUrl,
     method: req.method,
+    details: err.details || null,
+  });
+
+  ErrorLog.create({
+    message: err.message || 'Unhandled error',
+    stack: err.stack,
+    path: req.originalUrl,
+    method: req.method,
+    statusCode,
+    details: err.details || null,
+  }).catch((saveError) => {
+    logger.error('Failed to persist error log', {
+      message: saveError.message,
+      stack: saveError.stack,
+    });
   });
 
   return errorResponse(res, {
-    message: err.message || 'Internal Server Error',
+    message: statusCode >= 500 ? 'Internal Server Error' : (err.message || 'Request failed'),
     statusCode,
+    errors: err.details || null,
   });
 };
 

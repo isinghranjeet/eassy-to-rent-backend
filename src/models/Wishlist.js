@@ -9,6 +9,18 @@ const wishlistItemSchema = new mongoose.Schema({
   addedAt: {
     type: Date,
     default: Date.now
+  },
+  lastNotifiedAt: {
+    type: Date,
+    default: null
+  },
+  lastKnownPrice: {
+    type: Number,
+    default: null
+  },
+  lastKnownAvailability: {
+    type: String,
+    default: null
   }
 });
 

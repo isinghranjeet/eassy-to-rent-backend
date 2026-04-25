@@ -2,6 +2,7 @@ const buildResponse = (success, message, data = null) => ({
   success,
   message,
   data,
+  timestamp: new Date().toISOString(),
 });
 
 const successResponse = (res, { message = '', data = null, statusCode = 200 }) =>

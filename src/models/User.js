@@ -53,6 +53,32 @@ const userSchema = new mongoose.Schema({
     default: null
   },
 
+  lastLoginIP: {
+    type: String,
+    default: ''
+  },
+
+  loginActivity: [
+    {
+      type: {
+        type: String,
+        default: 'LOGIN'
+      },
+      time: {
+        type: Date,
+        default: Date.now
+      },
+      ip: {
+        type: String,
+        default: ''
+      },
+      userAgent: {
+        type: String,
+        default: ''
+      }
+    }
+  ],
+
   otp: {
     type: String,
     default: null
@@ -111,6 +137,11 @@ const userSchema = new mongoose.Schema({
       ref: 'PGListing',
     }
   ],
+
+  wishlistEmailEnabled: {
+    type: Boolean,
+    default: true
+  },
 
   createdAt: {
     type: Date,

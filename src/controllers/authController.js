@@ -1,7 +1,9 @@
 const User = require('../models/User');
+const Activity = require('../models/Activity');
 const { generateToken } = require('../utils/generateToken');
 const { successResponse, errorResponse } = require('../utils/response');
 const { sendEmail, sendOtpEmail, sendTestEmail } = require('../utils/sendEmail');
+const { sendLoginSuccessEmail } = require('../services/notificationService');
 const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 
@@ -91,6 +93,19 @@ exports.register = async (req, res, next) => {
 
     // Log registration
     console.log(`New user registered: ${user.email} from IP ${req.ip}`);
+
+    // Log activity
+    try {
+      await Activity.create({
+        type: 'USER_REGISTERED',
+        message: `New user registered: ${user.name} (${user.email})`,
+        userId: user._id,
+        userName: user.name,
+        metadata: { role: user.role, email: user.email },
+      });
+    } catch (activityErr) {
+      console.error('Activity log error:', activityErr.message);
+    }
 
     return successResponse(res, {
       statusCode: 201,
@@ -680,7 +695,18 @@ exports.verifyLoginOtp = async (req, res, next) => {
     user.otpExpires = null;
     user.lastLogin = new Date();
     user.lastLoginIP = req.ip;
+    user.loginActivity.push({
+      type: 'LOGIN',
+      time: new Date(),
+      ip: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
     await user.save();
+
+    // Fire-and-forget: send login success email (non-blocking)
+    sendLoginSuccessEmail(user, req.ip).catch((err) =>
+      console.error('❌ Login success email failed:', err.message)
+    );
 
     const token = generateToken(user._id, user.role);
 
@@ -905,12 +931,28 @@ exports.googleTokenLogin = async (req, res, next) => {
           profileImage: picture,
           isSocialLogin: true,
           lastLogin: new Date(),
+          lastLoginIP: req.ip || '',
+          loginActivity: [
+            {
+              type: 'LOGIN',
+              time: new Date(),
+              ip: req.ip || '',
+              userAgent: req.headers['user-agent'] || '',
+            }
+          ],
           status: 'active',
           password: crypto.randomBytes(20).toString('hex')
         });
       }
     } else {
       user.lastLogin = new Date();
+      user.lastLoginIP = req.ip || '';
+      user.loginActivity.push({
+        type: 'LOGIN',
+        time: new Date(),
+        ip: req.ip || '',
+        userAgent: req.headers['user-agent'] || '',
+      });
       await user.save();
     }
     

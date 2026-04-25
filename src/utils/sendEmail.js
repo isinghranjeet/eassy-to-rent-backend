@@ -111,7 +111,6 @@ const sendWishlistReminder = async (user, wishlistItems) => {
         <div style="text-align: center; margin-top: 30px;">
           <a href="https://easytorent.in/wishlist" class="button">View Wishlist</a>
         </div>
-      </div>
     </body>
     </html>
   `;
@@ -158,7 +157,16 @@ const sendBookingConfirmation = async (user, bookingDetails) => {
 };
 
 // Send Offer Email (Special Discount)
-const sendOfferEmail = async (userEmail, userName) => {
+// Supports custom message and discount code for bulk admin campaigns
+const sendOfferEmail = async (userEmail, userName, customMessage, discountCode) => {
+  const message = customMessage && customMessage.trim()
+    ? customMessage.trim().replace(/\n/g, '<br>')
+    : "Book your dream PG today and get a special discount!";
+
+  const discount = discountCode && discountCode.trim()
+    ? discountCode.trim()
+    : '20% OFF';
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -173,7 +181,8 @@ const sendOfferEmail = async (userEmail, userName) => {
         .header h1 { margin: 0; font-size: 28px; }
         .offer-badge { background: #ffd700; color: #333; padding: 8px 16px; border-radius: 50px; display: inline-block; font-weight: bold; margin-top: 15px; }
         .content { padding: 40px 30px; }
-        .discount { font-size: 56px; font-weight: bold; color: #f97316; text-align: center; margin: 20px 0; }
+        .discount { font-size: 48px; font-weight: bold; color: #f97316; text-align: center; margin: 20px 0; }
+        .message-box { background: #fff7ed; border-left: 4px solid #f97316; padding: 20px; border-radius: 8px; margin: 20px 0; font-size: 16px; color: #7c2d12; }
         .features { background: #f9f9f9; padding: 20px; border-radius: 15px; margin: 20px 0; }
         .feature { padding: 8px 0; border-bottom: 1px solid #eee; }
         .feature:last-child { border-bottom: none; }
@@ -189,16 +198,18 @@ const sendOfferEmail = async (userEmail, userName) => {
           <h1>🎉 EasyToRent</h1>
           <p>Exclusive Offer Just For You!</p>
           <div class="offer-badge">🔥 LIMITED TIME OFFER 🔥</div>
-        </div>
         
         <div class="content">
-          <h2 style="text-align: center;">Hi ${userName}! 👋</h2>
-          <p style="text-align: center; font-size: 18px;">Book your dream PG today and get</p>
+          <h2 style="text-align: center;">Hi ${userName || 'there'}! 👋</h2>
+          
+          <div class="message-box">
+            ${message}
+          </div>
           
           <div class="discount">
-            20% OFF
+            ${discount}
           </div>
-          <p style="text-align: center;">on your first month's rent!</p>
+          <p style="text-align: center; font-size: 16px; color: #4b5563;">Use this exclusive code when booking!</p>
           
           <div class="features">
             <div class="feature">✅ <strong>Verified Properties</strong> - 100% genuine listings</div>
@@ -206,14 +217,13 @@ const sendOfferEmail = async (userEmail, userName) => {
             <div class="feature">✅ <strong>24/7 Security</strong> - CCTV & Guard available</div>
             <div class="feature">✅ <strong>No Brokerage</strong> - Direct owner contact</div>
             <div class="feature">✅ <strong>Easy Booking Process</strong> - Just a few clicks</div>
-          </div>
           
           <div style="text-align: center;">
             <a href="https://easytorent.in/pg" class="button">🔍 Browse PGs & Claim Offer</a>
           </div>
           
           <p style="text-align: center; margin-top: 30px; font-size: 14px;">
-            ⏰ <span class="expiry">Offer valid until 30th April 2026</span>
+            ⏰ <span class="expiry">Offer valid for a limited time only</span>
           </p>
           <p style="text-align: center; font-size: 12px; color: #888;">
             Limited slots available. Book now to secure your discount!
@@ -223,17 +233,16 @@ const sendOfferEmail = async (userEmail, userName) => {
         <div class="footer">
           <p>EasyToRent - Find your perfect PG accommodation</p>
           <p>📍 Chandigarh | Mohali | Panchkula | Zirakpur</p>
-          <p>© 2024 EasyToRent. All rights reserved.</p>
+          <p>© ${new Date().getFullYear()} EasyToRent. All rights reserved.</p>
           <p style="font-size: 11px;">You're receiving this email because you're a valued EasyToRent user.</p>
         </div>
-      </div>
     </body>
     </html>
   `;
 
   return await sendEmail({
     email: userEmail,
-    subject: '🎉 Special Offer: 20% OFF on Your First PG Booking!',
+    subject: `🎉 Special Offer: ${discount} - EasyToRent`,
     html,
   });
 };
@@ -293,13 +302,11 @@ const sendPriceDropAlert = async (user, pg, oldPrice, newPrice) => {
             <div style="margin-top: 15px;">
               <span class="savings">Save ₹${savings.toLocaleString()}/month (${discountPercent}% OFF)</span>
             </div>
-          </div>
           
           <div class="features">
             <div class="feature">✅ <strong>Verified Property</strong> - 100% genuine listing</div>
             <div class="feature">✅ <strong>No Brokerage</strong> - Direct owner contact</div>
             <div class="feature">✅ <strong>Easy Booking</strong> - Just a few clicks</div>
-          </div>
           
           <div style="text-align: center;">
             <a href="https://easytorent.in/pg/${pg._id}" class="button">🔍 View Property & Book Now</a>
@@ -316,7 +323,6 @@ const sendPriceDropAlert = async (user, pg, oldPrice, newPrice) => {
           <p><a href="https://easytorent.in/price-alerts" style="color: #3b82f6;">Manage Alerts</a></p>
           <p>© 2024 EasyToRent. All rights reserved.</p>
         </div>
-      </div>
     </body>
     </html>
   `;
@@ -343,5 +349,5 @@ module.exports = {
   sendBookingConfirmation,
   sendTestEmail,
   sendOfferEmail,
-  sendPriceDropAlert  // ✅ ADD THIS
+  sendPriceDropAlert
 };

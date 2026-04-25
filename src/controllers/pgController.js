@@ -378,7 +378,15 @@ exports.updatePGListing = async (req, res, next) => {
       updatePayload.videoUrl = req.body.videoUrl;
     }
     if (req.body.virtualTour !== undefined) {
-      updatePayload.virtualTour = req.body.virtualTour;
+      // Validate YouTube URL
+      const v = req.body.virtualTour;
+      if (v && !/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(v)) {
+        return errorResponse(res, {
+          statusCode: 400,
+          message: 'Invalid virtual tour URL. Only YouTube URLs (youtube.com or youtu.be) are allowed',
+        });
+      }
+      updatePayload.virtualTour = v;
     }
 
     if (req.body.lat && req.body.lng) {

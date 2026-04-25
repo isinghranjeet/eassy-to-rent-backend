@@ -174,7 +174,51 @@ const getTrendingPGs = async (req, res) => {
   }
 };
 
+// Get admin-picked recommendations (admin-curated list)
+const getAdminPicks = async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+
+    let adminPicks = await PGListing.find({ published: true, adminRecommended: true })
+      .sort({ rating: -1, createdAt: -1 })
+      .limit(parseInt(limit));
+
+    // If not enough admin picks, fill with featured/top-rated
+    if (adminPicks.length < limit) {
+      const existingIds = adminPicks.map(r => r._id);
+      const additionalCount = parseInt(limit) - adminPicks.length;
+
+      const additional = await PGListing.find({
+        _id: { $nin: existingIds },
+        published: true
+      })
+        .sort({ featured: -1, rating: -1 })
+        .limit(additionalCount);
+
+      adminPicks = [...adminPicks, ...additional];
+    }
+
+    res.json({
+      success: true,
+      adminPicks: adminPicks,
+      count: adminPicks.length
+    });
+  } catch (error) {
+    console.error('Error getting admin picks:', error);
+    const fallback = await PGListing.find({ published: true })
+      .sort({ featured: -1, rating: -1 })
+      .limit(parseInt(req.query.limit || 8));
+
+    res.json({
+      success: true,
+      adminPicks: fallback,
+      count: fallback.length
+    });
+  }
+};
+
 module.exports = {
   getPersonalizedRecommendations,
-  getTrendingPGs
+  getTrendingPGs,
+  getAdminPicks
 };
