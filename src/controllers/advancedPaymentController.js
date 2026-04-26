@@ -7,10 +7,17 @@ const User = require('../models/User');
 const PaymentLog = require('../models/PaymentLog');
 
 // ✅ Initialize Razorpay only (Stripe optional)
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
+let razorpay;
+try {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_SflfuTdO7GtSJg',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || 'z96jUOnHgrXvouEqxVb5AAr1'
+  });
+  console.log('✅ Razorpay initialized in advancedPaymentController');
+} catch (err) {
+  console.error('❌ Razorpay initialization failed:', err.message);
+  razorpay = null;
+}
 
 // ✅ Optional: Initialize Stripe only if keys are present
 let stripe = null;
@@ -71,6 +78,9 @@ const initializePayment = async (req, res) => {
     let paymentData = {};
 
     if (paymentMethod === 'razorpay') {
+      if (!razorpay) {
+        return res.status(500).json({ success: false, message: 'Razorpay not initialized. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.' });
+      }
       const order = await razorpay.orders.create({
         amount: Math.round(booking.totalAmount * 100),
         currency: 'INR',
@@ -159,8 +169,9 @@ const verifyPayment = async (req, res) => {
     if (provider === 'razorpay') {
       // Verify signature
       const body = razorpay_order_id + '|' + razorpay_payment_id;
+      const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'z96jUOnHgrXvouEqxVb5AAr1';
       const expectedSignature = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .createHmac('sha256', razorpaySecret)
         .update(body.toString())
         .digest('hex');
 
