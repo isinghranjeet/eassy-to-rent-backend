@@ -22,6 +22,221 @@ transporter.verify((error, success) => {
   }
 });
 
+// Shared email styles (modern glassmorphism design)
+const getEmailStyles = () => `
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap');
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: radial-gradient(circle at 20% 30%, #0f1923 0%, #0a0f14 100%);
+      line-height: 1.6;
+      padding: 20px;
+    }
+    
+    .email-wrapper {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #ffffff;
+      border-radius: 32px;
+      overflow: hidden;
+      box-shadow: 0 30px 40px -20px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,0,0,0.05);
+      animation: slideUp 0.5s ease-out;
+    }
+    
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .header {
+      padding: 40px 30px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .header h1 {
+      font-size: 32px;
+      margin-bottom: 8px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    
+    .header p {
+      font-size: 15px;
+      opacity: 0.9;
+    }
+    
+    .content {
+      padding: 40px 30px;
+      background: #ffffff;
+    }
+    
+    .button {
+      display: inline-block;
+      background: linear-gradient(105deg, #FF7A2F, #EA580C);
+      color: white !important;
+      padding: 14px 35px;
+      text-decoration: none;
+      border-radius: 60px;
+      font-weight: 600;
+      font-size: 15px;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      text-align: center;
+      cursor: pointer;
+    }
+    
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+    }
+    
+    .feature-card {
+      background: linear-gradient(135deg, #F8FAFE 0%, #F1F5F9 100%);
+      padding: 20px;
+      border-radius: 20px;
+      margin: 20px 0;
+    }
+    
+    .price-tag {
+      background: linear-gradient(105deg, #10b981, #059669);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 50px;
+      display: inline-block;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    
+    .urgent-badge {
+      background: #FEF3C7;
+      border-left: 4px solid #F59E0B;
+      padding: 15px;
+      border-radius: 12px;
+      margin: 20px 0;
+    }
+    
+    .footer {
+      background: #F9FAFB;
+
+      text-align: center;
+      font-size: 12px;
+      color: #6B7280;
+      border-top: 1px solid #E5E7EB;
+    }
+    
+    .otp-box {
+      background: linear-gradient(135deg, #F8FAFE 0%, #F1F5F9 100%);
+      border-radius: 28px;
+      text-align: center;
+      padding: 25px;
+      margin: 24px 0;
+    }
+    
+    .otp-code {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: 12px;
+      background: linear-gradient(135deg, #FF7A2F, #EA580C);
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+    }
+    
+    .price-comparison {
+      background: #F8FAFE;
+      border-radius: 20px;
+      padding: 20px;
+      text-align: center;
+      margin: 20px 0;
+    }
+    
+    .old-price {
+      text-decoration: line-through;
+      color: #94A3B8;
+      font-size: 16px;
+    }
+    
+    .new-price {
+      font-size: 36px;
+      font-weight: 800;
+      color: #22C55E;
+      margin: 8px 0;
+    }
+    
+    .savings-chip {
+      background: #DCFCE7;
+      color: #15803D;
+      border-radius: 40px;
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-block;
+    }
+    
+    .wishlist-item {
+      background: #F9FAFB;
+      border-radius: 16px;
+      padding: 15px;
+      margin-bottom: 12px;
+      transition: transform 0.2s;
+    }
+    
+    .property-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #E5E7EB;
+    }
+    
+    .property-row:last-child {
+      border-bottom: none;
+    }
+    
+    .discount-badge {
+      display: inline-block;
+      background: #FEF3C7;
+      color: #92400E;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    
+    @media (max-width: 600px) {
+      .content {
+        padding: 30px 20px;
+      }
+      .header h1 {
+        font-size: 24px;
+      }
+      .otp-code {
+        font-size: 32px;
+        letter-spacing: 6px;
+      }
+      .new-price {
+        font-size: 28px;
+      }
+    }
+  </style>
+`;
+
 // Main sendEmail function
 const sendEmail = async (options) => {
   try {
@@ -44,29 +259,48 @@ const sendEmail = async (options) => {
   }
 };
 
-// Send OTP Email
+// Send OTP Email (Enhanced UI)
 const sendOtpEmail = async (email, otp) => {
   const html = `
     <!DOCTYPE html>
     <html>
     <head>
-      <style>
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #f97316; color: white; padding: 20px; text-align: center; }
-        .otp { font-size: 32px; font-weight: bold; color: #f97316; text-align: center; margin: 20px; }
-      </style>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Verify Your Email - EasyToRent</title>
+      ${getEmailStyles()}
     </head>
     <body>
-      <div class="container">
-        <div class="header">
-          <h1>EasyToRent</h1>
+      <div class="email-wrapper">
+        <div class="header" style="background: linear-gradient(105deg, #FF7A2F, #EA580C); color: white;">
+          <h1>🔐 Verify Your Access</h1>
+          <p>Secure one-time passcode</p>
         </div>
-        <h2>Your OTP Verification Code</h2>
-        <p>Please use the following OTP to complete your login:</p>
-        <div class="otp">${otp}</div>
-        <p>This OTP is valid for 10 minutes.</p>
-        <p>If you didn't request this, please ignore this email.</p>
+        
+        <div class="content">
+          <h2 style="font-size: 24px; font-weight: 600; margin-bottom: 12px;">Hello there! 👋</h2>
+          <p style="color: #475569; margin-bottom: 20px;">Please use the following verification code to complete your sign-in. This code expires in <strong>10 minutes</strong>.</p>
+          
+          <div class="otp-box">
+            <div class="otp-code">${otp}</div>
+            <div style="font-size: 13px; margin-top: 12px; color: #6B7280;">⏱️ Valid for 10 minutes · Do not share</div>
+          </div>
+          
+          <div class="feature-card">
+            <div style="font-size: 14px; color: #9B2C0C;">
+              🔒 <strong>Security Tip:</strong> EasyToRent will never ask for this code outside the login page. Keep it confidential.
+            </div>
+          </div>
+          
+          <p style="color: #6B7280; font-size: 13px; margin-top: 20px;">If you didn't request this, please ignore this email. Your account remains secure.</p>
+        </div>
+        
+        <div class="footer">
+          <p>EasyToRent - Find your perfect PG accommodation</p>
+          <p>📍 Chandigarh | Mohali | Panchkula | Zirakpur</p>
+          <p>Need help? <a href="mailto:support@easytorent.in" style="color: #FF7A2F;">Contact Support</a></p>
+          <p>© 2025 EasyToRent. All rights reserved.</p>
+        </div>
       </div>
     </body>
     </html>
@@ -74,18 +308,20 @@ const sendOtpEmail = async (email, otp) => {
 
   return await sendEmail({
     email,
-    subject: 'Your OTP Verification Code - EasyToRent',
+    subject: '🔐 Your OTP Verification Code - EasyToRent',
     html,
   });
 };
 
-// Send Wishlist Reminder
+// Send Wishlist Reminder (Enhanced)
 const sendWishlistReminder = async (user, wishlistItems) => {
-  const itemsList = wishlistItems.map(item => `
-    <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #eee; border-radius: 8px;">
-      <h3 style="margin: 0 0 5px 0;">${item.pg.name}</h3>
-      <p style="margin: 0; color: #666;">📍 ${item.pg.address}</p>
-      <p style="margin: 5px 0 0 0; color: #f97316; font-weight: bold;">₹${item.pg.price}/month</p>
+  const itemsList = wishlistItems.map((item, index) => `
+    <div class="property-row">
+      <div>
+        <strong style="color: #1F2937;">${item.pg.name}</strong>
+        <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">📍 ${item.pg.address}</div>
+      </div>
+      <div style="color: #FF7A2F; font-weight: 700;">₹${item.pg.price.toLocaleString()}<span style="font-size: 12px;">/mo</span></div>
     </div>
   `).join('');
 
@@ -93,57 +329,41 @@ const sendWishlistReminder = async (user, wishlistItems) => {
     <!DOCTYPE html>
     <html>
     <head>
-      <style>
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #f97316; color: white; padding: 20px; text-align: center; }
-        .button { background: #f97316; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
-      </style>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your Wishlist - EasyToRent</title>
+      ${getEmailStyles()}
     </head>
     <body>
-      <div class="container">
-        <div class="header">
-          <h1>🏠 Don't Miss Out!</h1>
+      <div class="email-wrapper">
+        <div class="header" style="background: linear-gradient(105deg, #C241FF, #9333EA); color: white;">
+          <h1>❤️ Your Wishlist Awaits!</h1>
+          <p>Don't miss out on your favorite properties</p>
         </div>
-        <h2>Hi ${user.name} 👋</h2>
-        <p>You have <strong>${wishlistItems.length}</strong> propert${wishlistItems.length === 1 ? 'y' : 'ies'} saved in your wishlist.</p>
-        <div>${itemsList}</div>
-        <div style="text-align: center; margin-top: 30px;">
-          <a href="https://easytorent.in/wishlist" class="button">View Wishlist</a>
+        
+        <div class="content">
+          <h2 style="font-size: 22px; font-weight: 600; margin-bottom: 8px;">Hi ${user.name} 👋</h2>
+          <p>You have <strong style="color: #C241FF;">${wishlistItems.length}</strong> propert${wishlistItems.length === 1 ? 'y' : 'ies'} waiting for you in your wishlist!</p>
+          
+          <div style="background: #F9FAFB; border-radius: 20px; padding: 16px; margin: 24px 0;">
+            ${itemsList}
+          </div>
+          
+          <div class="urgent-badge">
+            <strong>🔥 Hot Deal:</strong> Properties in wishlists get booked 3x faster! Book within 24 hours and get 10% off on your first month.
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://easytorent.in/wishlist" class="button">View My Wishlist →</a>
+          </div>
+          
+          <p style="font-size: 13px; color: #6B7280;">💡 <strong>Pro Tip:</strong> Enable price alerts to get notified when your saved PGs go on sale.</p>
         </div>
-    </body>
-    </html>
-  `;
-
-  return await sendEmail({
-    email: user.email,
-    subject: '🏠 Don\'t miss your saved PGs!',
-    html,
-  });
-};
-
-// Send Booking Confirmation
-const sendBookingConfirmation = async (user, bookingDetails) => {
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #22c55e; color: white; padding: 20px; text-align: center; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>✅ Booking Confirmed!</h1>
+        
+        <div class="footer">
+          <p>EasyToRent - Find your perfect PG accommodation</p>
+          <p>© 2025 EasyToRent. All rights reserved.</p>
         </div>
-        <h2>Hi ${user.name} 👋</h2>
-        <p>Your booking has been confirmed!</p>
-        <p><strong>PG:</strong> ${bookingDetails.pgName}</p>
-        <p><strong>Duration:</strong> ${bookingDetails.duration} months</p>
-        <p><strong>Total:</strong> ₹${bookingDetails.totalAmount}</p>
       </div>
     </body>
     </html>
@@ -151,21 +371,93 @@ const sendBookingConfirmation = async (user, bookingDetails) => {
 
   return await sendEmail({
     email: user.email,
-    subject: '✅ Booking Confirmed - EasyToRent',
+    subject: `❤️ ${wishlistItems.length} propert${wishlistItems.length === 1 ? 'y is' : 'ies are'} waiting for you!`,
     html,
   });
 };
 
-// Send Offer Email (Special Discount)
-// Supports custom message and discount code for bulk admin campaigns
+// Send Booking Confirmation (Enhanced)
+const sendBookingConfirmation = async (user, bookingDetails) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Booking Confirmed - EasyToRent</title>
+      ${getEmailStyles()}
+    </head>
+    <body>
+      <div class="email-wrapper">
+        <div class="header" style="background: linear-gradient(105deg, #22C55E, #15803D); color: white;">
+          <h1>🎉 Booking Confirmed!</h1>
+          <p>Welcome to your new home 🏡</p>
+        </div>
+        
+        <div class="content">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+            <span style="font-size: 40px;">✅</span>
+            <h2 style="font-size: 24px; font-weight: 600;">Congratulations ${user.name}! 🎊</h2>
+          </div>
+          
+          <p>Your booking has been successfully confirmed. Here are your booking details:</p>
+          
+          <div class="feature-card">
+            <div style="margin-bottom: 15px;">
+              <strong>🏠 Property:</strong> ${bookingDetails.pgName}
+            </div>
+            <div style="margin-bottom: 15px;">
+              <strong>📅 Duration:</strong> ${bookingDetails.duration} months
+            </div>
+            <div style="margin-bottom: 15px;">
+              <strong>💰 Total Amount:</strong> 
+              <span style="color: #22C55E; font-size: 28px; font-weight: 700;">₹${bookingDetails.totalAmount.toLocaleString()}</span>
+            </div>
+            <div>
+              <strong>📞 Owner Contact:</strong> Available in your dashboard
+            </div>
+          </div>
+          
+          <div class="urgent-badge">
+            <strong>📋 Next Steps:</strong>
+            <ul style="margin-top: 10px; margin-left: 20px;">
+              <li>✓ Complete your profile for better service</li>
+              <li>✓ Connect with property owner</li>
+              <li>✓ Schedule a visit or move-in date</li>
+            </ul>
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://easytorent.in/dashboard" class="button">Go to Dashboard →</a>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>Have questions? We're here to help 24/7</p>
+          <p><a href="mailto:support@easytorent.in" style="color: #22C55E;">support@easytorent.in</a> | +91 12345 67890</p>
+          <p>© 2025 EasyToRent. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return await sendEmail({
+    email: user.email,
+    subject: '🎉 Booking Confirmed! Welcome to EasyToRent',
+    html,
+  });
+};
+
+// Send Offer Email (Enhanced)
 const sendOfferEmail = async (userEmail, userName, customMessage, discountCode) => {
   const message = customMessage && customMessage.trim()
     ? customMessage.trim().replace(/\n/g, '<br>')
     : "Book your dream PG today and get a special discount!";
-
+  
   const discount = discountCode && discountCode.trim()
     ? discountCode.trim()
-    : '20% OFF';
+    : '25% OFF';
 
   const html = `
     <!DOCTYPE html>
@@ -173,81 +465,65 @@ const sendOfferEmail = async (userEmail, userName, customMessage, discountCode) 
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Special Offer</title>
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f4; }
-        .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #f97316, #ea580c); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; }
-        .offer-badge { background: #ffd700; color: #333; padding: 8px 16px; border-radius: 50px; display: inline-block; font-weight: bold; margin-top: 15px; }
-        .content { padding: 40px 30px; }
-        .discount { font-size: 48px; font-weight: bold; color: #f97316; text-align: center; margin: 20px 0; }
-        .message-box { background: #fff7ed; border-left: 4px solid #f97316; padding: 20px; border-radius: 8px; margin: 20px 0; font-size: 16px; color: #7c2d12; }
-        .features { background: #f9f9f9; padding: 20px; border-radius: 15px; margin: 20px 0; }
-        .feature { padding: 8px 0; border-bottom: 1px solid #eee; }
-        .feature:last-child { border-bottom: none; }
-        .button { display: inline-block; background: linear-gradient(135deg, #f97316, #ea580c); color: white; padding: 14px 35px; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 20px; transition: transform 0.3s; }
-        .button:hover { transform: scale(1.05); }
-        .footer { background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #666; }
-        .expiry { color: #e53e3e; font-weight: bold; }
-      </style>
+      <title>Special Offer - EasyToRent</title>
+      ${getEmailStyles()}
     </head>
     <body>
-      <div class="container">
-        <div class="header">
-          <h1>🎉 EasyToRent</h1>
-          <p>Exclusive Offer Just For You!</p>
-          <div class="offer-badge">🔥 LIMITED TIME OFFER 🔥</div>
+      <div class="email-wrapper">
+        <div class="header" style="background: linear-gradient(105deg, #FFB347, #FF6B6B); color: white;">
+          <h1>🎁 EXCLUSIVE OFFER</h1>
+          <p>Limited time deal just for you</p>
+          <div class="discount-badge" style="background: rgba(255,255,255,0.2); color: white;">🔥 FLASH SALE 🔥</div>
+        </div>
         
         <div class="content">
-          <h2 style="text-align: center;">Hi ${userName || 'there'}! 👋</h2>
+          <h2 style="text-align: center; font-size: 28px; font-weight: 700; margin-bottom: 20px;">Hey ${userName || 'there'}! 👋</h2>
           
-          <div class="message-box">
+          <div class="feature-card">
             ${message}
           </div>
           
-          <div class="discount">
-            ${discount}
+          <div style="text-align: center; margin: 30px 0;">
+            <div style="font-size: 56px; font-weight: 800; background: linear-gradient(135deg, #FF7A2F, #EA580C); background-clip: text; -webkit-background-clip: text; color: transparent;">${discount}</div>
+            <p style="margin-top: 10px;">Use code: <strong style="background: #FEF3C7; padding: 6px 16px; border-radius: 40px; font-size: 16px;">${discount}</strong></p>
           </div>
-          <p style="text-align: center; font-size: 16px; color: #4b5563;">Use this exclusive code when booking!</p>
           
-          <div class="features">
-            <div class="feature">✅ <strong>Verified Properties</strong> - 100% genuine listings</div>
-            <div class="feature">✅ <strong>Free WiFi & Food Options</strong> - Choose as per your need</div>
-            <div class="feature">✅ <strong>24/7 Security</strong> - CCTV & Guard available</div>
-            <div class="feature">✅ <strong>No Brokerage</strong> - Direct owner contact</div>
-            <div class="feature">✅ <strong>Easy Booking Process</strong> - Just a few clicks</div>
+          <div style="background: linear-gradient(135deg, #F8FAFE 0%, #F1F5F9 100%); border-radius: 20px; padding: 20px; margin: 20px 0;">
+            <h3 style="margin-bottom: 15px;">✨ What You Get:</h3>
+            <p>✅ Verified Properties - 100% genuine listings</p>
+            <p>✅ Free WiFi & Food Options Available</p>
+            <p>✅ 24/7 Security with CCTV Surveillance</p>
+            <p>✅ No Brokerage - Direct Owner Contact</p>
+            <p>✅ Easy Online Booking Process</p>
+          </div>
           
           <div style="text-align: center;">
-            <a href="https://easytorent.in/pg" class="button">🔍 Browse PGs & Claim Offer</a>
+            <a href="https://easytorent.in/pg" class="button">Claim Your Discount →</a>
           </div>
           
-          <p style="text-align: center; margin-top: 30px; font-size: 14px;">
-            ⏰ <span class="expiry">Offer valid for a limited time only</span>
-          </p>
-          <p style="text-align: center; font-size: 12px; color: #888;">
-            Limited slots available. Book now to secure your discount!
-          </p>
+          <div class="urgent-badge" style="margin-top: 30px;">
+            ⏰ <strong>Limited Time Offer!</strong> Valid for next 48 hours only • Limited slots available
+          </div>
         </div>
         
         <div class="footer">
           <p>EasyToRent - Find your perfect PG accommodation</p>
           <p>📍 Chandigarh | Mohali | Panchkula | Zirakpur</p>
-          <p>© ${new Date().getFullYear()} EasyToRent. All rights reserved.</p>
-          <p style="font-size: 11px;">You're receiving this email because you're a valued EasyToRent user.</p>
+          <p>© 2025 EasyToRent. All rights reserved.</p>
         </div>
+      </div>
     </body>
     </html>
   `;
 
   return await sendEmail({
     email: userEmail,
-    subject: `🎉 Special Offer: ${discount} - EasyToRent`,
+    subject: `🎁 ${discount} OFF - Exclusive Deal Just for You!`,
     html,
   });
 };
 
-// ✅ NEW: Send Price Drop Alert Email
+// Send Price Drop Alert (Enhanced)
 const sendPriceDropAlert = async (user, pg, oldPrice, newPrice) => {
   const savings = oldPrice - newPrice;
   const discountPercent = Math.round((savings / oldPrice) * 100);
@@ -258,71 +534,60 @@ const sendPriceDropAlert = async (user, pg, oldPrice, newPrice) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Price Drop Alert!</title>
-      <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f4; }
-        .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0; font-size: 32px; }
-        .price-box { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 15px; padding: 20px; text-align: center; margin: 20px 0; }
-        .price-old { text-decoration: line-through; color: #999; font-size: 18px; }
-        .price-new { color: #22c55e; font-size: 32px; font-weight: bold; }
-        .savings { background: #22c55e; color: white; padding: 5px 15px; border-radius: 50px; display: inline-block; font-weight: bold; }
-        .button { display: inline-block; background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 12px 30px; text-decoration: none; border-radius: 50px; font-weight: bold; margin-top: 20px; }
-        .features { background: #f9f9f9; padding: 20px; border-radius: 15px; margin: 20px 0; }
-        .feature { padding: 8px 0; border-bottom: 1px solid #eee; }
-        .footer { background: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #666; }
-      </style>
+      <title>Price Drop Alert - EasyToRent</title>
+      ${getEmailStyles()}
     </head>
     <body>
-      <div class="container">
-        <div class="header">
-          <h1>💰 Price Drop Alert!</h1>
-          <p>Great news about a PG you're interested in</p>
+      <div class="email-wrapper">
+        <div class="header" style="background: linear-gradient(105deg, #2563EB, #1E40AF); color: white;">
+          <h1>💰 Price Just Dropped!</h1>
+          <p>Save big on your favorite property</p>
         </div>
         
-        <div style="padding: 30px;">
-          <h2 style="text-align: center;">Hi ${user.name}! 👋</h2>
-          <p style="text-align: center; font-size: 16px;">The PG you've been watching just got cheaper!</p>
+        <div class="content">
+          <h2 style="font-size: 22px; font-weight: 600; margin-bottom: 8px;">Great news ${user.name}! 🎉</h2>
+          <p>The PG you've been watching just got cheaper. Here's what you'll save:</p>
           
-          <div style="text-align: center; margin: 20px 0;">
-            <img src="${pg.images?.[0] || 'https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=200'}" 
-                 alt="${pg.name}" 
-                 style="width: 100%; max-width: 300px; height: 200px; object-fit: cover; border-radius: 15px;">
-          </div>
-          
-          <h3 style="text-align: center; color: #1f2937;">${pg.name}</h3>
-          <p style="text-align: center; color: #6b7280;">📍 ${pg.address}</p>
-          
-          <div class="price-box">
-            <p style="margin: 0;">Previous Price</p>
-            <p class="price-old">₹${oldPrice.toLocaleString()}/month</p>
-            <p style="margin: 10px 0 0;">New Price</p>
-            <p class="price-new">₹${newPrice.toLocaleString()}/month</p>
-            <div style="margin-top: 15px;">
-              <span class="savings">Save ₹${savings.toLocaleString()}/month (${discountPercent}% OFF)</span>
+          <div class="price-comparison">
+            <div style="margin-bottom: 15px;">
+              <h3 style="font-size: 18px; margin-bottom: 5px;">${pg.name}</h3>
+              <p style="color: #6B7280; font-size: 13px;">📍 ${pg.address}</p>
             </div>
-          
-          <div class="features">
-            <div class="feature">✅ <strong>Verified Property</strong> - 100% genuine listing</div>
-            <div class="feature">✅ <strong>No Brokerage</strong> - Direct owner contact</div>
-            <div class="feature">✅ <strong>Easy Booking</strong> - Just a few clicks</div>
-          
-          <div style="text-align: center;">
-            <a href="https://easytorent.in/pg/${pg._id}" class="button">🔍 View Property & Book Now</a>
+            
+            <div>
+              <span class="old-price">₹${oldPrice.toLocaleString()}/month</span>
+              <span style="font-size: 28px; margin: 0 10px;">→</span>
+              <span class="new-price">₹${newPrice.toLocaleString()}/month</span>
+            </div>
+            
+            <div style="margin-top: 15px;">
+              <span class="savings-chip">Save ₹${savings.toLocaleString()}/month (${discountPercent}% OFF)</span>
+            </div>
           </div>
           
-          <p style="text-align: center; font-size: 12px; color: #888; margin-top: 20px;">
-            ⏰ This offer won't last long! Book now to secure this price.
-          </p>
+          <div class="feature-card">
+            <div>✅ <strong>Verified Property</strong> - 100% genuine listing</div>
+            <div style="margin-top: 10px;">✅ <strong>No Brokerage</strong> - Direct owner contact</div>
+            <div style="margin-top: 10px;">✅ <strong>Easy Booking</strong> - Just a few clicks</div>
+          </div>
+          
+          <div class="urgent-badge">
+            <strong>⏰ Limited Time Offer!</strong> This discounted price won't last long. Properties at this price get booked within 24 hours!
+          </div>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://easytorent.in/pg/${pg._id}" class="button">View & Book Now →</a>
+          </div>
+          
+          <p style="font-size: 13px; color: #6B7280;">💡 <strong>Pro Tip:</strong> Book now to secure this discounted rate before it's gone!</p>
         </div>
         
         <div class="footer">
-          <p>EasyToRent - Find your perfect PG accommodation</p>
           <p>You received this email because you set a price alert for this PG.</p>
-          <p><a href="https://easytorent.in/price-alerts" style="color: #3b82f6;">Manage Alerts</a></p>
-          <p>© 2024 EasyToRent. All rights reserved.</p>
+          <p><a href="https://easytorent.in/price-alerts" style="color: #2563EB;">Manage Price Alerts</a> | <a href="https://easytorent.in/unsubscribe" style="color: #6B7280;">Unsubscribe</a></p>
+          <p>© 2025 EasyToRent. All rights reserved.</p>
         </div>
+      </div>
     </body>
     </html>
   `;
@@ -331,13 +596,70 @@ const sendPriceDropAlert = async (user, pg, oldPrice, newPrice) => {
 
   return await sendEmail({
     email: user.email,
-    subject: `💰 Price Drop Alert! ${pg.name} is now ₹${newPrice.toLocaleString()}/month`,
+    subject: `💰 Price Drop Alert! Save ₹${savings.toLocaleString()}/month on ${pg.name}`,
     html,
     text
   });
 };
 
-// Send Test Email (Now sends offer email instead of test)
+// Send Welcome Email (New - Enhanced)
+const sendWelcomeEmail = async (user) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Welcome to EasyToRent!</title>
+      ${getEmailStyles()}
+    </head>
+    <body>
+      <div class="email-wrapper">
+        <div class="header" style="background: linear-gradient(105deg, #4F46E5, #7C3AED); color: white;">
+          <h1>🏠 Welcome to EasyToRent!</h1>
+          <p>Your home search just got smarter</p>
+        </div>
+        
+        <div class="content">
+          <h2 style="font-size: 24px; font-weight: 600; margin-bottom: 12px;">Welcome aboard, ${user.name}! 🚀</h2>
+          <p>We're thrilled to have you join our community of happy tenants and property owners.</p>
+          
+          <div style="margin: 30px 0;">
+            <h3 style="margin-bottom: 15px;">✨ Here's what you can do next:</h3>
+            <div class="feature-card">
+              <p>🔍 <strong>Browse Properties</strong> - Explore 500+ verified PGs in your area</p>
+              <p style="margin-top: 12px;">❤️ <strong>Save Favorites</strong> - Create wishlists and get price alerts</p>
+              <p style="margin-top: 12px;">📅 <strong>Book Instantly</strong> - Hassle-free booking process</p>
+              <p style="margin-top: 12px;">⭐ <strong>Leave Reviews</strong> - Share your experience with others</p>
+            </div>
+          </div>
+          
+          <div style="text-align: center;">
+            <a href="https://easytorent.in/pg" class="button">Start Exploring →</a>
+          </div>
+          
+          <div class="urgent-badge" style="margin-top: 30px;">
+            <strong>🎁 Welcome Bonus:</strong> Complete your profile and get ₹500 off on your first booking!
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>Need help getting started? <a href="mailto:support@easytorent.in" style="color: #4F46E5;">Contact our support team</a></p>
+          <p>© 2025 EasyToRent. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return await sendEmail({
+    email: user.email,
+    subject: '🏠 Welcome to EasyToRent! Start Your Home Search Today',
+    html,
+  });
+};
+
+// Send Test Email
 const sendTestEmail = async (userEmail, userName) => {
   return await sendOfferEmail(userEmail, userName);
 };
@@ -349,5 +671,6 @@ module.exports = {
   sendBookingConfirmation,
   sendTestEmail,
   sendOfferEmail,
-  sendPriceDropAlert
+  sendPriceDropAlert,
+  sendWelcomeEmail
 };
