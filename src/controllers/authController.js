@@ -209,15 +209,7 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Check OTP request rate
-    const otpKey = `otp_${user.email}`;
-    const lastOtpRequest = otpRequests.get(otpKey);
-    if (lastOtpRequest && Date.now() - lastOtpRequest < 60000) {
-      return errorResponse(res, {
-        statusCode: 429,
-        message: 'Please wait 60 seconds before requesting another OTP',
-      });
-    }
+// Successful password match - generate tokens
 
     // Generate secure 6-digit OTP
     const otp = crypto.randomInt(100000, 999999).toString();

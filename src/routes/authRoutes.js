@@ -10,7 +10,11 @@ const { protect, adminOnly } = require('../middleware/authMiddleware');
 router.post('/register', authController.register);
 
 // Login user (send OTP)
-router.post('/login', authController.login);
+router.route('/login')
+  .post(authController.login)
+  .head((req, res) => {
+    res.status(200).end();
+  });
 
 // Verify login OTP
 router.post('/verify-login-otp', authController.verifyLoginOtp);
