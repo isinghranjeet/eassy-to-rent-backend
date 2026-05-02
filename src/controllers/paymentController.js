@@ -4,7 +4,7 @@ const QRCode = require('qrcode');
 const CallCredit = require('../models/CallCredit');
 const PGListing = require('../models/PGListing');
 const Activity = require('../models/Activity');
-const asyncHandler = require('../middleware/asyncHandler');
+const { asyncHandler } = require('../middleware/asyncHandler');
 const AppError = require('../utils/AppError');
 const { successResponse } = require('../utils/response');
 

@@ -46,6 +46,7 @@
     "stripe": "^22.0.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "uuid": "^14.0.0",
     "winston": "^3.19.0",
     "xss-clean": "^0.1.4"
   },

@@ -209,8 +209,6 @@ exports.login = async (req, res, next) => {
       });
     }
 
-// Successful password match - generate tokens
-
     // Generate secure 6-digit OTP
     const otp = crypto.randomInt(100000, 999999).toString();
     const otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
@@ -221,6 +219,9 @@ exports.login = async (req, res, next) => {
     user.otpExpires = otpExpires;
     await user.save();
 
+    // FIX: Define otpKey before using it
+    const otpKey = `otp_${rawEmail}`;
+    
     // Update OTP request time
     otpRequests.set(otpKey, Date.now());
     clearRateLimit(otpKey);
@@ -278,37 +279,64 @@ exports.login = async (req, res, next) => {
 
     const text = `Your PG Finder login verification OTP is: ${otp}\n\nThis code will expire in 5 minutes.\n\nSecurity Tip: Never share this code with anyone.\n\nLogin Details:\nIP Address: ${req.ip}\nTime: ${new Date().toLocaleString()}\n\nIf this wasn't you, please reset your password immediately.`;
 
-    const isSent = await sendEmail({
-      email: user.email,
-      subject,
-      html,
-      text,
-    });
-
-    if (!isSent) {
-      console.error(`❌ Failed to send OTP email to: ${user.email}`);
+    try {
+      console.log(`🔐 Sending OTP ${otp} to ${user.email} (IP: ${req.ip})`);
       
+      const isSent = await sendOtpEmail(user.email, otp);  // Use dedicated OTP template
+
+      if (!isSent) {
+        console.error(`❌ OTP Email FAILED for ${user.email}: Check SMTP config`);
+        throw new Error('Email sending failed - check server logs');
+      }
+      
+      console.log(`✅ OTP ${otp} sent successfully to ${user.email}`);
+      
+    } catch (emailError) {
+      console.error('🚨 OTP Email ERROR:', {
+        email: user.email,
+        otp: otp.substring(0,2) + '***',  // Partial mask
+        error: emailError.message,
+        code: emailError.code,
+        ip: req.ip
+      });
+      
+      // DEV FALLBACK: Success response with OTP (status 200)
       if (process.env.NODE_ENV === 'development') {
-        return errorResponse(res, {
-          statusCode: 500,
-          message: `Failed to send email. Testing OTP: ${otp}`,
+        console.log(`🧪 DEV MODE - Email failed but continuing with OTP: ${otp}`);
+        const responseData = { 
+          requireOtp: true, 
+          email: user.email,
+          message: 'Email failed (dev fallback). Testing OTP shown in console.',
+          devOtp: otp  // Only in dev
+        };
+        return successResponse(res, {
+          message: 'Verification code ready! Check console/logs for dev OTP.',
+          statusCode: 200,
+          data: responseData,
         });
       }
       
+      // Production: Fail gracefully without exposing OTP
       return errorResponse(res, {
         statusCode: 500,
-        message: "Failed to send verification email. Please try again or contact support.",
+        message: 'Verification email failed to send. Please try again or contact support.',
       });
     }
 
-    const responseData = { requireOtp: true, email: user.email };
+    const responseData = { 
+      requireOtp: true, 
+      email: user.email,
+      message: 'OTP sent! Check your email (or console in dev mode)'
+    };
     
+    // Dev: Full OTP in response + console
     if (process.env.NODE_ENV === 'development') {
+      console.log(`🧪 DEV OTP Fallback: ${otp} (expires: ${new Date(user.otpExpires).toLocaleTimeString()})`);
       responseData.debugOtp = otp;
     }
 
     return successResponse(res, {
-      message: 'Verification code sent to your email. Please verify to login.',
+      message: 'Verification code sent successfully!',
       statusCode: 200,
       data: responseData,
     });

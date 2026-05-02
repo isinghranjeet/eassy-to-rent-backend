@@ -6,6 +6,16 @@ const logger = require('../utils/logger');
 const { successResponse, errorResponse } = require('../utils/response');
 const { uploadImage, uploadGalleryImages } = require('../utils/cloudinary');
 
+// ✅ OPTIMIZED: Import cache service
+let cache;
+try {
+  cache = require('../services/cache');
+  logger.info('✅ Cache service integrated');
+} catch (error) {
+  logger.warn('⚠️ Cache service not available:', error.message);
+  cache = null;
+}
+
 // Helper function to calculate distance between two coordinates (Haversine formula)
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth's radius in km
@@ -78,12 +88,29 @@ exports.getPGListings = async (req, res, next) => {
       hasVirtualTour,
       sort = '-createdAt',
       page = 1,
-      limit = 20
+limit = 20
     } = req.query;
+    
+    // ✅ OPTIMIZED: Check cache for basic listing requests (first page, no filters)
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const cacheKey = `pg_list_${type || 'all'}_${city || 'all'}_${sort}`;
+    if (cache && !search && !minPrice && !maxPrice && pageNum === 1 && limitNum >= 20) {
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        logger.info(`✅ Cache hit for: ${cacheKey}`);
+        return successResponse(res, {
+          statusCode: 200,
+          message: 'PG listings fetched from cache',
+          data: cached,
+          cached: true
+        });
+      }
+    }
     
     let query = {};
     
-    if (type && type !== 'all') query.type = type;
+    if
     if (published === 'true') query.published = true;
     if (published === 'false') query.published = false;
     if (featured === 'true') query.featured = true;
@@ -117,10 +144,12 @@ exports.getPGListings = async (req, res, next) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
+    // ✅ OPTIMIZED: Use lean() for better performance on read-only queries
     let listings = await PGListing.find(query)
       .sort(sort)
       .skip(skip)
-      .limit(limitNum);
+      .limit(limitNum)
+      .lean();
 
     listings = listings.map(listing => {
       const listingObj = listing.toObject();

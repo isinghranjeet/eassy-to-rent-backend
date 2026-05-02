@@ -1,7 +1,7 @@
 const ContactLog = require('../models/ContactLog');
 const PGListing = require('../models/PGListing');
 const CallCredit = require('../models/CallCredit');
-const asyncHandler = require('../middleware/asyncHandler');
+const { asyncHandler } = require('../middleware/asyncHandler');
 const AppError = require('../utils/AppError');
 
 // @desc    Initiate a contact (call or whatsapp) - requires auth

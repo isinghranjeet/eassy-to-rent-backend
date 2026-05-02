@@ -36,4 +36,9 @@ const wishlistSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// ✅ OPTIMIZED: Add indexes for performance
+wishlistSchema.index({ user: 1, 'items.pg': 1 }); // Compound for user's wishlist items
+wishlistSchema.index({ user: 1, createdAt: -1 }); // For recent wishlist queries
+wishlistSchema.index({ 'items.addedAt': -1 }); // For sorting by added date
+
 module.exports = mongoose.model('Wishlist', wishlistSchema);

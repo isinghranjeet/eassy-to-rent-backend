@@ -10,7 +10,7 @@ const PaymentLog = require('../models/PaymentLog');
 const ErrorLog = require('../models/ErrorLog');
 const Activity = require('../models/Activity');
 const { successResponse, errorResponse } = require('../utils/response');
-const asyncHandler = require('../middleware/asyncHandler');
+const { asyncHandler } = require('../middleware/asyncHandler');
 const { sendOfferEmail } = require('../services/notificationService');
 
 // ============================

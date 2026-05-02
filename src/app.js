@@ -38,7 +38,7 @@ try {
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const cacheHeaders = require('./middleware/cacheHeaders');
 const responseMiddleware = require('./middleware/responseMiddleware');
-const logger = require('./utils/logger');
+const { logger } = require('./utils/logger');
 const { seedAllAdminData } = require('./utils/seedAdminData');
 
 // Import cron jobs

@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const app = require('./app');
 const mongoose = require('mongoose');
-const logger = require('./utils/logger');
+const { logger } = require('./utils/logger');
 
 // ======================
 // PORT

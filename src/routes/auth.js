@@ -6,7 +6,11 @@ const { protect, adminOnly } = require('../middleware/authMiddleware');
 
 // ================= PUBLIC AUTH ROUTES =================
 router.post('/register', authController.register);
-router.post('/login', authController.login);
+router.route('/login')
+  .post(authController.login)
+  .head((req, res) => {
+    res.status(200).end();
+  });
 router.post('/verify-login-otp', authController.verifyLoginOtp);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
@@ -33,6 +37,6 @@ console.log('  - GET /profile');
 console.log('  - PUT /profile');
 console.log('  - GET /users');
 console.log('  - GET /debug');
-console.log('  - (OTP routes are commented out for now)');
+console.log('⚠️  LEGACY ROUTE DISABLED - Use src/routes/authRoutes.js instead');
 
-module.exports = router;
+module.exports = router; // Keep for compatibility but don't mount

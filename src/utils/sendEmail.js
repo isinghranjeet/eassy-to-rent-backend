@@ -13,10 +13,20 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Gmail App Password Required - https://myaccount.google.com/apppasswords
+if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
+  console.error('🚨 EMAIL CONFIG MISSING: Add SMTP_EMAIL & SMTP_PASSWORD to .env');
+}
+
 // Verify connection
 transporter.verify((error, success) => {
   if (error) {
-    console.error('❌ SMTP Connection Error:', error);
+    console.error('❌ SMTP Connection FAILED:', {
+      code: error.code,
+      message: error.message,
+      response: error.response?.message,
+      stack: error.stack
+    });
   } else {
     console.log('✅ SMTP Connected Successfully');
   }
@@ -249,12 +259,17 @@ const sendEmail = async (options) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent: ${info.messageId}`);
+    console.log(`✅ Email sent to ${options.email}: ${info.messageId}`);
     logger.info(`✅ Email sent: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error('❌ Send Email Error:', error);
-    logger.error(`❌ Send Email error: ${error.message}`);
+    console.error('❌ Send Email FAILED to', options.email, {
+      code: error.code,
+      message: error.message,
+      response: error.response,
+      stack: error.stack?.split('\\n')[0]
+    });
+    logger.error(`Send Email error for ${options.email}: ${error.message}`, { error });
     return false;
   }
 };

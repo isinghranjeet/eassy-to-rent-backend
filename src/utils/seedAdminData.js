@@ -4,7 +4,7 @@ const User = require('../models/User');
 const PGListing = require('../models/PGListing');
 const Booking = require('../models/Booking');
 const Review = require('../models/Review');
-const logger = require('./logger');
+const { logger } = require('./logger');
 
 const SAMPLE_NOTIFICATIONS = [
   {

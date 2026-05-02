@@ -157,7 +157,22 @@ const userSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
-  }
+  },
+
+  isEmailVerified: { 
+    type: Boolean, 
+    default: false 
+  },
+  emailVerificationToken: String,
+  emailVerificationExpires: Date,
+  verificationEmailSentAt: Date,
+  accountRecoveryToken: String,
+  accountRecoveryExpires: Date,
+  failedLoginAttempts: { 
+    type: Number, 
+    default: 0 
+  },
+  lockedUntil: Date
 
 });
 
@@ -223,6 +238,15 @@ userSchema.methods.useCredits = async function (amount = 1) {
 userSchema.methods.hasEnoughCredits = function (amount = 1) {
   return this.credits >= amount;
 };
+
+
+// ✅ OPTIMIZED: Add performance indexes
+userSchema.index({ role: 1 }); // For role-based queries
+userSchema.index({ status: 1 }); // For status filtering
+userSchema.index({ createdAt: -1 }); // For sorting by date
+userSchema.index({ googleId: 1 }, { sparse: true }); // For Google login (sparse for null values)
+userSchema.index({ role: 1, status: 1 }); // Compound for admin user queries
+userSchema.index({ name: 'text', email: 'text' }); // Text search
 
 
 const User = mongoose.model('User', userSchema);
