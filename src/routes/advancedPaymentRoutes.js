@@ -11,21 +11,8 @@ const paymentLimiter = rateLimit({
 });
 
 // ✅ Import controller with error handling
-let paymentController;
-try {
-  paymentController = require('../controllers/advancedPaymentController');
-  console.log('✅ Advanced payment controller loaded');
-} catch (error) {
-  console.error('❌ Payment controller error:', error.message);
-  // Fallback functions
-  paymentController = {
-    initializePayment: (req, res) => res.status(501).json({ success: false, message: 'Payment service not configured' }),
-    verifyPayment: (req, res) => res.status(501).json({ success: false, message: 'Payment service not configured' }),
-    refundPayment: (req, res) => res.status(501).json({ success: false, message: 'Payment service not configured' }),
-    getPaymentHistory: (req, res) => res.status(501).json({ success: false, message: 'Payment service not configured' }),
-    paymentWebhook: (req, res) => res.status(501).json({ success: false, message: 'Payment service not configured' })
-  };
-}
+const paymentController = require('../controllers/advancedPaymentController');
+console.log('✅ Advanced payment controller loaded');
 
 // ✅ Routes - All callbacks exist
 router.post('/init', protect, paymentLimiter, paymentController.initializePayment);

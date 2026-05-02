@@ -43,6 +43,7 @@
     "rate-limit": "^0.1.1",
     "razorpay": "^2.9.6",
     "react-leaflet": "^5.0.0",
+    "resend": "^6.12.2",
     "stripe": "^22.0.2",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",

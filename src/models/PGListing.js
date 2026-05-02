@@ -315,37 +315,16 @@ PGListingSchema.methods.setVirtualTour = async function(videoUrl, virtualTour) {
   return await this.save();
 };
 
-// Indexes for faster queries
-PGListingSchema.index({ slug: 1 });
-PGListingSchema.index({ name: 1 });
+// ✅ Indexes - Consolidated (removed duplicates)
+PGListingSchema.index({ slug: 1 }); // Single unique index
 PGListingSchema.index({ city: 1 });
-PGListingSchema.index({ type: 1 });
-PGListingSchema.index({ price: 1 });
-PGListingSchema.index({ published: 1 });
-PGListingSchema.index({ rating: -1 });
+PGListingSchema.index({ type: 1, city: 1, published: 1 });
+PGListingSchema.index({ published: 1, price: 1 });
+PGListingSchema.index({ rating: -1, reviewCount: -1 });
 PGListingSchema.index({ createdAt: -1 });
 PGListingSchema.index({ views: -1 });
-PGListingSchema.index({ weeklyBookings: -1 });
 PGListingSchema.index({ location: '2dsphere' });
-PGListingSchema.index({ videoUrl: 1 });
-PGListingSchema.index({ virtualTour: 1 });
-
-// Compound indexes for common queries
-PGListingSchema.index({ city: 1, published: 1, price: 1 });
-PGListingSchema.index({ type: 1, city: 1, published: 1 });
-PGListingSchema.index({ published: 1, views: -1 });
-
-// ✅ NEW: Compound index for virtual tour filter
-PGListingSchema.index({ published: 1, videoUrl: 1 });
-PGListingSchema.index({ featured: 1, videoUrl: 1 });
-
-// Text search index
-PGListingSchema.index({ 
-  name: 'text', 
-  description: 'text', 
-  address: 'text', 
-  city: 'text' 
-});
+PGListingSchema.index({ name: 'text', description: 'text', address: 'text', city: 'text' });
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 

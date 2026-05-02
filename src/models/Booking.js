@@ -246,23 +246,19 @@ bookingSchema.virtual('refundEligible').get(function() {
   return { eligible: false, percentage: 0 };
 });
 
-// Indexes for faster queries
+// ✅ Indexes - Consolidated (removed duplicates)
 bookingSchema.index({ userId: 1, status: 1 });
 bookingSchema.index({ pgId: 1, checkInDate: 1 });
-bookingSchema.index({ createdAt: -1 });
+bookingSchema.index({ invoiceNumber: 1 }, { sparse: true }); // Single unique index
 bookingSchema.index({ paymentStatus: 1, status: 1 });
-bookingSchema.index({ invoiceNumber: 1 });
-bookingSchema.index({ razorpayOrderId: 1 });
-bookingSchema.index({ paymentId: 1 });
+bookingSchema.index({ createdAt: -1 });
+bookingSchema.index({ razorpayOrderId: 1, sparse: true });
 bookingSchema.index({ checkInDate: 1, status: 1 });
 
-// Compound indexes for common queries
-bookingSchema.index({ userId: 1, createdAt: -1 });
-bookingSchema.index({ pgId: 1, checkInDate: 1, status: 1 });
-bookingSchema.index({ paymentStatus: 1, createdAt: -1 });
-
-// TTL index for pending payments older than 1 hour (auto-cancel)
-bookingSchema.index({ createdAt: 1 }, { 
+// TTL index for pending payments
+bookingSchema.index({ 
+  createdAt: 1 
+}, { 
   expireAfterSeconds: 3600,
   partialFilterExpression: { 
     paymentStatus: 'pending',

@@ -240,13 +240,12 @@ userSchema.methods.hasEnoughCredits = function (amount = 1) {
 };
 
 
-// ✅ OPTIMIZED: Add performance indexes
-userSchema.index({ role: 1 }); // For role-based queries
-userSchema.index({ status: 1 }); // For status filtering
-userSchema.index({ createdAt: -1 }); // For sorting by date
-userSchema.index({ googleId: 1 }, { sparse: true }); // For Google login (sparse for null values)
-userSchema.index({ role: 1, status: 1 }); // Compound for admin user queries
-userSchema.index({ name: 'text', email: 'text' }); // Text search
+// ✅ OPTIMIZED Indexes - Consolidated (no duplicates)
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ googleId: 1 }, { sparse: true });
+userSchema.index({ role: 1, status: 1 });
+userSchema.index({ createdAt: -1 });
+userSchema.index({ name: 'text', email: 'text' });
 
 
 const User = mongoose.model('User', userSchema);

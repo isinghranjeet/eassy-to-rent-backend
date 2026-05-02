@@ -25,15 +25,8 @@ const userRoutes = require('./routes/userRoutes');
 const { registerApiRoutes } = require('./routes/registerApiRoutes');
 const { registerWebhookRoutes } = require('./routes/registerWebhookRoutes');
 
-// ✅ Advanced payment routes with error handling
-let advancedPaymentRoutes;
-try {
-  advancedPaymentRoutes = require('./routes/advancedPaymentRoutes');
-  console.log('✅ Advanced payment routes loaded');
-} catch (error) {
-  console.warn('⚠️ Advanced payment routes not available:', error.message);
-  advancedPaymentRoutes = null;
-}
+// Skip advanced payment routes to prevent crashes
+let advancedPaymentRoutes = null;
 
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const cacheHeaders = require('./middleware/cacheHeaders');
@@ -156,7 +149,7 @@ app.get('/api/debug/routes', (req, res) => {
   res.json({ count: routes.length, routes });
 });
 
-  registerApiRoutes(app, {
+registerApiRoutes(app, {
     pgRoutes,
     authRoutes,
     bookingRoutes,
@@ -168,11 +161,10 @@ app.get('/api/debug/routes', (req, res) => {
     blogRoutes,
     contactRoutes,
     paymentRoutes,
-    advancedPaymentRoutes,
     recommendationRoutes,
     statsRoutes,
     userRoutes,
-    adminRoutes,
+    adminRoutes
   });
 
 registerWebhookRoutes(app, express);
