@@ -765,7 +765,15 @@ exports.verifyLoginOtp = async (req, res, next) => {
 // @access  Public
 exports.forgotPassword = async (req, res, next) => {
   try {
+    // 🚀 Step-by-step debug logs for forgot-password flow
+    console.log('🚀 forgotPassword HIT');
+    console.log('BODY:', req.body);
+    console.log('📍 STEP 1');
+    console.log('Mongoose readyState:', (require('mongoose').connection.readyState ?? 'unknown'));
+    console.log('📍 STEP 2');
     const rawEmail = typeof req.body.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+
+
 
     if (!rawEmail) {
       return errorResponse(res, { statusCode: 400, message: 'Please provide your email address' });
@@ -780,8 +788,12 @@ exports.forgotPassword = async (req, res, next) => {
       });
     }
 
+    console.log('📍 STEP 3 about to query User.findOne');
     const user = await User.findOne({ email: rawEmail });
+    console.log('📍 STEP 4 after query User.findOne');
+    console.log('USER FOUND:', user ? user.email : null);
     if (!user) {
+
       return successResponse(res, {
         message: 'If an account exists with this email, you will receive a password reset OTP.',
         data: { email: rawEmail },
@@ -825,18 +837,24 @@ exports.forgotPassword = async (req, res, next) => {
       </html>
     `;
 
-    const isSent = await sendEmail({
+    // Send reset OTP email.
+    // IMPORTANT: sendEmail returns an object { success: boolean, messageId?, error? }.
+    // Checking the object itself is incorrect because objects are always truthy.
+    const emailResult = await sendEmail({
       email: user.email,
       subject: '🔑 Password Reset OTP - PG Finder',
       html,
     });
 
-    if (!isSent) {
+    if (!emailResult || !emailResult.success) {
+      // Ensure frontend only gets success when the email send actually succeeded.
       return errorResponse(res, {
         statusCode: 500,
         message: "Failed to send password reset email. Please try again.",
+        // Keep response generic; details are in server logs.
       });
     }
+
 
     return successResponse(res, {
       message: 'If an account exists with this email, you will receive a password reset OTP.',
