@@ -1,5 +1,10 @@
 // backend/src/controllers/locationController.js
 const PG = require('../models/PGListing');
+const {
+  slugifyLocationName,
+  locationPhraseFromSlug,
+  buildLocationMatchQueryFromSlug,
+} = require('../utils/locationUtils');
 
 // @desc    Get all unique locations from PGs (DYNAMIC)
 // @route   GET /api/locations
@@ -18,7 +23,7 @@ const getLocations = async (req, res) => {
       {
         $project: {
           name: "$_id",
-          slug: { $toLower: { $replaceAll: { input: "$_id", find: " ", replacement: "-" } } },
+          slug: { $toLower: { $replaceAll: { input: { $trim: { input: "$_id" } }, find: " ", replacement: "-" } } },
           pgCount: "$count",
           image: { $ifNull: ["$image", "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500"] },
           _id: 0
@@ -26,13 +31,150 @@ const getLocations = async (req, res) => {
       },
       { $sort: { pgCount: -1 } }
     ]);
-    
-    res.json({ success: true, data: locations });
+
+    // Ensure slugging stays consistent with other location endpoints
+    const data = (locations || []).map((l) => ({
+      ...l,
+      slug: slugifyLocationName(l?.name),
+    }));
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Get locations error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// @desc    Get top locations by live database aggregation
+// @route   GET /api/locations/top
+// @access  Public
+const getTopLocations = async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    const limitNum = Math.max(parseInt(limit || '10', 10), 1);
+
+    // Debug logging
+    const totalListingsCount = await PG.countDocuments({});
+    const publishedListingsCount = await PG.countDocuments({ published: true });
+
+    // Location fields actually present in schema:
+    // city, locality (preferred); address is a string; no separate address.city/address.locality fields.
+
+
+    // IMPORTANT: use $aggregate with real schema fields only
+    const locations = await PG.aggregate([
+      {
+        $match: {
+          published: true,
+        },
+      },
+      {
+        // Prefer locality; fallback to city
+        $addFields: {
+          localityTrimmed: {
+            $trim: { input: { $ifNull: ['$locality', ''] } },
+          },
+          cityTrimmed: {
+            $trim: { input: { $ifNull: ['$city', ''] } },
+          },
+        },
+      },
+      {
+        $addFields: {
+          chosenLocationName: {
+            $cond: [
+              { $ne: ['$localityTrimmed', ''] },
+              '$localityTrimmed',
+              '$cityTrimmed',
+            ],
+          },
+          chosenLocationNormalized: {
+            $toLower: {
+              // NOTE: avoid $regexReplace for older MongoDB versions.
+              // We normalize more aggressively in Node (slugifyLocationName).
+              $cond: [
+                { $ne: ['$localityTrimmed', ''] },
+                '$localityTrimmed',
+                '$cityTrimmed',
+              ],
+            },
+          },
+        },
+      },
+      {
+        $match: {
+          chosenLocationNormalized: { $ne: '' },
+        },
+      },
+      {
+        $group: {
+          _id: '$chosenLocationNormalized',
+          propertyCount: { $sum: 1 },
+          name: {
+            // Keep a representative (non-normalized) value
+            $first: '$chosenLocationName',
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          name: '$name',
+          slug: {
+            $toLower: {
+              $replaceAll: {
+                input: {
+                  $replaceAll: {
+                    input: { $trim: { input: '$name' } },
+                    find: ' ',
+                    replacement: '-',
+                  },
+                },
+                find: '.',
+                replacement: '',
+              },
+            },
+          },
+          propertyCount: 1,
+        },
+      },
+      { $match: { propertyCount: { $gte: 1 } } },
+      { $sort: { propertyCount: -1 } },
+      { $limit: limitNum },
+    ]);
+
+    // matched listings count (for debug)
+    const matchedListingsCount = await PG.countDocuments({
+      published: true,
+      $or: [
+        { locality: { $exists: true, $ne: '' } },
+        { city: { $exists: true, $ne: '' } },
+      ],
+    });
+
+    console.log('[locations/top] totalListingsCount=', totalListingsCount);
+    console.log('[locations/top] publishedListingsCount=', publishedListingsCount);
+    console.log('[locations/top] matchedListingsCount=', matchedListingsCount);
+    console.log('[locations/top] aggregationOutput=', locations);
+
+    // Ensure consistent slugging between endpoints (aggregation slug may differ subtly)
+    const data = (locations || []).map((l) => ({
+      ...l,
+      slug: slugifyLocationName(l?.name),
+    }));
+
+    // Final response
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('Get top locations error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
 
 // @desc    Get popular locations (for carousel)
 // @route   GET /api/locations/popular
@@ -41,15 +183,15 @@ const getPopularLocations = async (req, res) => {
   try {
     const { limit = 8 } = req.query;
     const limitNum = parseInt(limit);
-    
+
     const locations = await PG.aggregate([
       { $match: { published: true, city: { $ne: null, $exists: true, $ne: '' } } },
       {
         $group: {
           _id: "$city",
           count: { $sum: 1 },
-          image: { $first: { $arrayElemAt: ["$images", 0] } }
-        }
+          image: { $first: { $arrayElemAt: ["$images", 0] } },
+        },
       },
       {
         $project: {
@@ -57,19 +199,21 @@ const getPopularLocations = async (req, res) => {
           slug: { $toLower: { $replaceAll: { input: "$_id", find: " ", replacement: "-" } } },
           pgCount: "$count",
           image: { $ifNull: ["$image", "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500"] },
-          _id: 0
-        }
+          _id: 0,
+        },
       },
       { $sort: { pgCount: -1 } },
-      { $limit: limitNum }
+      { $limit: limitNum },
     ]);
-    
-    res.json({ success: true, data: locations });
+
+    const data = (locations || []).map((l) => ({ ...l, slug: slugifyLocationName(l?.name) }));
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Get popular locations error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // @desc    Search locations (autocomplete)
 // @route   GET /api/locations/search
@@ -95,8 +239,9 @@ const searchLocations = async (req, res) => {
       },
       { $limit: parseInt(limit) }
     ]);
-    
-    res.json({ success: true, data: locations });
+
+    const data = (locations || []).map((l) => ({ ...l, slug: slugifyLocationName(l?.name) }));
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Search locations error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -110,13 +255,12 @@ const getLocationBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
     const { page = 1, limit = 12, sort = "price_asc", type, minPrice, maxPrice } = req.query;
-    
-    const cityName = slug.replace(/-/g, ' ');
-    
-    let pgQuery = {
-      published: true,
-      city: { $regex: new RegExp(`^${cityName}$`, 'i') }
-    };
+
+    const locationName = locationPhraseFromSlug(slug);
+
+    // Core fix: match the same fields used by /api/locations/top (locality preferred, city fallback),
+    // and be robust to inconsistent strings like "near <location>" etc.
+    let pgQuery = buildLocationMatchQueryFromSlug(slug);
     
     if (type && type !== 'all') pgQuery.type = type;
     if (minPrice || maxPrice) {
@@ -141,13 +285,13 @@ const getLocationBySlug = async (req, res) => {
     
     const totalPGs = await PG.countDocuments(pgQuery);
     
-    const firstPG = await PG.findOne({ city: { $regex: new RegExp(`^${cityName}$`, 'i') } });
+    const firstPG = await PG.findOne(pgQuery);
     const locationImage = firstPG?.images?.[0] || "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500";
     
     res.json({
       success: true,
       data: {
-        location: { name: cityName, slug, pgCount: totalPGs, image: locationImage },
+        location: { name: locationName, slug, pgCount: totalPGs, image: locationImage },
         pgs,
         pagination: {
           currentPage: pageNum,
@@ -208,6 +352,7 @@ const createLocation = async (req, res) => {
 
 module.exports = {
   getLocations,
+  getTopLocations,
   getPopularLocations,
   searchLocations,
   getLocationBySlug,
@@ -215,5 +360,5 @@ module.exports = {
   filterPGsByLocation,
   calculateDistance,
   updateLocationCounts,
-  createLocation
+  createLocation,
 };
