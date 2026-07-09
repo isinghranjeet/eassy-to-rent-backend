@@ -1,71 +1,85 @@
-const mongoose = require('mongoose');
+// const mongoose = require('mongoose');
 const { logger } = require('../utils/logger');
 
-// ✅ OPTIMIZED: Enhanced MongoDB connection with better handling for 10k+ users
+mongoose.set('strictQuery', false);
+
 const connectDB = async () => {
   try {
     const mongoURI = process.env.MONGO_URI;
 
     if (!mongoURI) {
-      logger.error('MONGO_URI is missing in environment variables');
-      process.exit(1);
+      throw new Error('MONGO_URI is missing in environment variables');
     }
 
-    // ✅ OPTIMIZED: Connection options for 10k+ users
     const options = {
-      maxPoolSize: 100, // ✅ Increased: 10 -> 100 for 10k+ users
-      minPoolSize: 10, // ✅ Increased: 2 -> 10 connections
-      serverSelectionTimeoutMS: 10000, // ✅ Increased: 5 -> 10 seconds
-      socketTimeoutMS: 60000, // ✅ Increased: 45 -> 60 seconds
-      bufferCommands: false, // Disable mongoose buffering
-      retryWrites: true, // Retry failed writes
-      retryReads: true, // Retry failed reads
-      w: 'majority', // ✅ Write to majority for safety
-      journal: true, // ✅ Enable journaling
-      readPreference: 'primaryPreferred', // ✅ Read from primary
-    };
+      // Connection Pool
+      maxPoolSize: 100,
+      minPoolSize: 5,
+      maxIdleTimeMS: 30000,
 
-    // ✅ OPTIMIZED: Set mongoose options globally
-    mongoose.set('strictQuery', false);
+      // Timeouts
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 60000,
+      connectTimeoutMS: 10000,
+
+      // Performance
+      bufferCommands: false,
+      autoIndex: process.env.NODE_ENV !== 'production',
+
+      // Reliability
+      retryWrites: true,
+      retryReads: true,
+      w: 'majority',
+
+      // IMPORTANT:
+      // Transactions require PRIMARY
+      // Never use primaryPreferred here
+      readPreference: 'primary'
+    };
 
     const conn = await mongoose.connect(mongoURI, options);
 
-    // ✅ NEW: Connection event listeners
-    mongoose.connection.on('connected', () => {
-      logger.info(`MongoDB connected: ${conn.connection.host}`);
+    const db = mongoose.connection;
+
+    db.once('open', () => {
+      logger.info(`✅ MongoDB Connected`);
+      logger.info(`Host : ${db.host}`);
+      logger.info(`Database : ${db.name}`);
     });
 
-    mongoose.connection.on('error', (err) => {
-      logger.error(`MongoDB error: ${err.message}`);
+    db.on('reconnected', () => {
+      logger.info('🔄 MongoDB Reconnected');
     });
 
-    mongoose.connection.on('disconnected', () => {
-      logger.warn('MongoDB disconnected');
+    db.on('disconnected', () => {
+      logger.warn('⚠ MongoDB Disconnected');
     });
 
-    mongoose.connection.on('reconnected', () => {
-      logger.info('MongoDB reconnected');
+    db.on('error', (err) => {
+      logger.error(`MongoDB Error: ${err.message}`);
     });
 
-    logger.info(`MongoDB connected: ${conn.connection.host}`);
-  } catch (error) {
-    logger.error(`MongoDB connection error: ${error.message}`);
+    return conn;
+  } catch (err) {
+    logger.error(`MongoDB Connection Failed: ${err.message}`);
     process.exit(1);
   }
 };
 
-// ✅ NEW: Graceful shutdown handler
-const gracefulShutdown = async (signal) => {
-  logger.info(`${signal} received, closing MongoDB connection...`);
+const shutdown = async (signal) => {
+  logger.info(`${signal} received. Closing MongoDB connection...`);
+
   try {
-    await mongoose.connection.close();
-    logger.info('MongoDB connection closed');
+    await mongoose.connection.close(false);
+    logger.info('MongoDB connection closed successfully.');
+    process.exit(0);
   } catch (err) {
     logger.error(`Error closing MongoDB: ${err.message}`);
+    process.exit(1);
   }
 };
 
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
 
 module.exports = connectDB;
