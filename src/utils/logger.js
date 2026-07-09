@@ -2,14 +2,14 @@ const { createLogger, format, transports } = require('winston');
 const { v4: uuidv4 } = require('uuid');
 
 /**
- * Generate correlation ID for request tracking
+ * Generate Correlation ID
  */
 const getCorrelationId = (req) => {
   return req.headers['x-correlation-id'] || uuidv4();
 };
 
 /**
- * Add correlation ID middleware
+ * Middleware
  */
 const addCorrelationId = (req, res, next) => {
   req.correlationId = getCorrelationId(req);
@@ -18,29 +18,7 @@ const addCorrelationId = (req, res, next) => {
 };
 
 /**
- * Create child logger with correlation ID
- */
-const createChildLogger = (parentLogger, correlationId) => {
-  return {
-    error: (message, meta = {}) =>
-      parentLogger.error(message, { correlationId, ...meta }),
-
-    warn: (message, meta = {}) =>
-      parentLogger.warn(message, { correlationId, ...meta }),
-
-    info: (message, meta = {}) =>
-      parentLogger.info(message, { correlationId, ...meta }),
-
-    debug: (message, meta = {}) =>
-      parentLogger.debug(message, { correlationId, ...meta }),
-
-    http: (message, meta = {}) =>
-      parentLogger.http(message, { correlationId, ...meta }),
-  };
-};
-
-/**
- * Winston Logger Setup
+ * Winston Logger
  */
 const logger = createLogger({
   level:
@@ -64,27 +42,51 @@ const logger = createLogger({
           ? format.combine(format.timestamp(), format.json())
           : format.combine(
               format.colorize(),
-              format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-              format.printf(({ level, message, timestamp, correlationId, ...meta }) => {
-                const corr = correlationId
-                  ? `[${correlationId.slice(0, 8)}] `
-                  : '';
-
-                const extra =
-                  Object.keys(meta).length && level !== 'http'
-                    ? ` ${JSON.stringify(meta)}`
+              format.timestamp({
+                format: 'YYYY-MM-DD HH:mm:ss',
+              }),
+              format.printf(
+                ({ timestamp, level, message, correlationId, ...meta }) => {
+                  const corr = correlationId
+                    ? `[${correlationId.substring(0, 8)}] `
                     : '';
 
-                return `${timestamp} ${corr}[${level.toUpperCase()}] ${message}${extra}`;
-              })
+                  const extra =
+                    Object.keys(meta).length > 0
+                      ? ` ${JSON.stringify(meta)}`
+                      : '';
+
+                  return `${timestamp} ${corr}[${level.toUpperCase()}] ${message}${extra}`;
+                }
+              )
             ),
     }),
   ],
 });
 
+/**
+ * Child Logger
+ */
+const createChildLogger = (correlationId) => ({
+  error: (message, meta = {}) =>
+    logger.error(message, { correlationId, ...meta }),
+
+  warn: (message, meta = {}) =>
+    logger.warn(message, { correlationId, ...meta }),
+
+  info: (message, meta = {}) =>
+    logger.info(message, { correlationId, ...meta }),
+
+  debug: (message, meta = {}) =>
+    logger.debug(message, { correlationId, ...meta }),
+
+  http: (message, meta = {}) =>
+    logger.http(message, { correlationId, ...meta }),
+});
+
 module.exports = {
   logger,
   createChildLogger,
-  getCorrelationId,
   addCorrelationId,
+  getCorrelationId,
 };
