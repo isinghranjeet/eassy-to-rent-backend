@@ -5,9 +5,17 @@ const Activity = require('../models/Activity');
 const mongoose = require('mongoose');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const AppError = require('../utils/AppError');
-const logger = require('../utils/logger');
+const logger = require('../utils/logger'); // FIX: logger is now the winston instance directly (see utils/logger.js)
 const { successResponse } = require('../utils/response');
 const { hasOverlappingBooking, calculateBookingAmount } = require('../services/bookingService');
+
+/**
+ * PERFORMANCE NOTE:
+ * Your logs show GET /api/pg and /api/bookings/can-review taking 1-2.4s.
+ * That's almost certainly missing indexes rather than app code. Make sure
+ * you have (in PGListing): { city: 1, type: 1, published: 1, rating: -1 }
+ * and (in Booking): { userId: 1, pgId: 1, status: 1 }, { pgId: 1, checkInDate: 1, checkOutDate: 1 }.
+ */
 
 const createBooking = asyncHandler(async (req, res) => {
   const {
@@ -23,10 +31,11 @@ const createBooking = asyncHandler(async (req, res) => {
 
   const session = await mongoose.startSession();
   let booking;
+  let pgSnapshot; // captured inside the transaction, reused after commit — avoids a second PG lookup
 
   try {
     await session.withTransaction(async () => {
-      const pg = await PGListing.findById(pgId).session(session);
+      const pg = await PGListing.findById(pgId).select('name city price').session(session);
       if (!pg) throw new AppError('PG not found', 404);
 
       const parsedCheckInDate = new Date(checkInDate);
@@ -76,6 +85,7 @@ const createBooking = asyncHandler(async (req, res) => {
       );
 
       booking = createdBookings[0];
+      pgSnapshot = { name: pg.name, city: pg.city };
 
       await PGListing.updateOne(
         { _id: pgId },
@@ -89,19 +99,19 @@ const createBooking = asyncHandler(async (req, res) => {
 
   logger.info('Booking created', { bookingId: booking._id, userId, pgId, status: booking.status });
 
-  // Log activity
+  // Log activity — reuses pgSnapshot captured during the transaction instead of
+  // querying PGListing a second time.
   try {
-    const pg = await PGListing.findById(pgId).select('name city').lean();
     await Activity.create({
       type: 'BOOKING_CREATED',
       message: `New booking of ₹${booking.totalAmount} received`,
       userId,
       targetId: booking._id.toString(),
-      targetName: pg?.name || 'Unknown PG',
-      metadata: { amount: booking.totalAmount, city: pg?.city, status: booking.status },
+      targetName: pgSnapshot?.name || 'Unknown PG',
+      metadata: { amount: booking.totalAmount, city: pgSnapshot?.city, status: booking.status },
     });
   } catch (activityErr) {
-    console.error('Activity log error:', activityErr.message);
+    logger.error('Activity log error', { error: activityErr.message, bookingId: booking._id });
   }
 
   return successResponse(res, {
@@ -114,11 +124,16 @@ const createBooking = asyncHandler(async (req, res) => {
 const getUserBookings = asyncHandler(async (req, res) => {
   const bookings = await Booking.find({ userId: req.user._id })
     .populate('pgId', 'name images address price type city rating')
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .lean();
   return successResponse(res, { message: 'Bookings fetched', data: { count: bookings.length, bookings } });
 });
 
 const getBookingById = asyncHandler(async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw new AppError('Invalid booking id', 400);
+  }
+
   const booking = await Booking.findById(req.params.id)
     .populate('pgId', 'name address city price images')
     .populate('userId', 'name email phone');
@@ -132,6 +147,10 @@ const getBookingById = asyncHandler(async (req, res) => {
 });
 
 const cancelBooking = asyncHandler(async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw new AppError('Invalid booking id', 400);
+  }
+
   const booking = await Booking.findById(req.params.id);
   if (!booking) throw new AppError('Booking not found', 404);
   if (booking.userId.toString() !== req.user._id.toString()) throw new AppError('Not authorized', 403);
@@ -156,13 +175,16 @@ const canReview = asyncHandler(async (req, res) => {
     });
   }
 
-  const booking = await Booking.findOne({
-    userId,
-    pgId,
-    status: { $in: ['completed', 'confirmed'] },
-  });
+  // Run both lookups in parallel instead of sequentially.
+  const [booking, existingReview] = await Promise.all([
+    Booking.findOne({
+      userId,
+      pgId,
+      status: { $in: ['completed', 'confirmed'] },
+    }).lean(),
+    Review.findOne({ user: userId, pgListing: pgId }).lean(),
+  ]);
 
-  const existingReview = await Review.findOne({ user: userId, pgListing: pgId });
   const canReviewFlag = Boolean(booking && !existingReview);
 
   return successResponse(res, {
@@ -206,35 +228,31 @@ const getAllBookings = asyncHandler(async (req, res) => {
     ];
 
     if (mongoose.Types.ObjectId.isValid(search)) {
-      query.$or.push({ _id: mongoose.Types.ObjectId(search) });
+      query.$or.push({ _id: new mongoose.Types.ObjectId(search) });
     }
   }
-
-  let baseQuery = Booking.find(query)
-    .populate('pgId', 'name address city price images')
-    .populate('userId', 'name email phone')
-    .sort({ [sortField]: sortDirection })
-    .skip(skip)
-    .limit(limitNum);
 
   if (req.user.role === 'admin') {
     // no extra restrictions
   } else if (req.user.role === 'owner') {
-    const ownerPgs = await PGListing.find({ owner: req.user._id });
+    // Compute owner's PG ids ONCE and reuse for both the find and the count
+    // (previously this ran PGListing.find twice for the same data).
+    const ownerPgs = await PGListing.find({ owner: req.user._id }).select('_id').lean();
     const pgIds = ownerPgs.map((pg) => pg._id);
-    baseQuery = Booking.find({ ...query, pgId: { $in: pgIds } })
-      .populate('pgId', 'name address city price images')
-      .populate('userId', 'name email phone')
-      .sort({ [sortField]: sortDirection })
-      .skip(skip)
-      .limit(limitNum);
+    query.pgId = { $in: pgIds };
   } else {
     throw new AppError('Not authorized', 403);
   }
 
   const [bookings, total] = await Promise.all([
-    baseQuery,
-    Booking.countDocuments(req.user.role === 'owner' ? { ...query, pgId: { $in: (await PGListing.find({ owner: req.user._id })).map((pg) => pg._id) } } : query)
+    Booking.find(query)
+      .populate('pgId', 'name address city price images')
+      .populate('userId', 'name email phone')
+      .sort({ [sortField]: sortDirection })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    Booking.countDocuments(query),
   ]);
 
   return successResponse(res, {
@@ -250,11 +268,16 @@ const getAllBookings = asyncHandler(async (req, res) => {
 
 const updateBookingStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    throw new AppError('Invalid booking id', 400);
+  }
+
   const booking = await Booking.findById(req.params.id);
   if (!booking) throw new AppError('Booking not found', 404);
 
   if (req.user.role === 'owner') {
-    const pg = await PGListing.findById(booking.pgId);
+    const pg = await PGListing.findById(booking.pgId).select('owner').lean();
     if (!pg || pg.owner.toString() !== req.user._id.toString()) throw new AppError('Not authorized', 403);
   } else if (req.user.role !== 'admin') {
     throw new AppError('Not authorized', 403);
@@ -281,17 +304,28 @@ const updateBookingStatus = asyncHandler(async (req, res) => {
 const getBookingStats = asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin') throw new AppError('Not authorized', 403);
 
-  const totalBookings = await Booking.countDocuments();
-  const confirmedBookings = await Booking.countDocuments({ status: 'confirmed' });
-  const completedBookings = await Booking.countDocuments({ status: 'completed' });
-  const cancelledBookings = await Booking.countDocuments({ status: 'cancelled' });
-
   const last7Days = new Date();
   last7Days.setDate(last7Days.getDate() - 7);
-  const recentBookings = await Booking.countDocuments({ createdAt: { $gte: last7Days } });
-  const revenueResult = await Booking.aggregate([
-    { $match: { status: { $in: ['confirmed', 'completed'] } } },
-    { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+
+  // All independent counts run in parallel instead of sequential awaits —
+  // this alone should cut this endpoint's latency roughly in half or more.
+  const [
+    totalBookings,
+    confirmedBookings,
+    completedBookings,
+    cancelledBookings,
+    recentBookings,
+    revenueResult,
+  ] = await Promise.all([
+    Booking.countDocuments(),
+    Booking.countDocuments({ status: 'confirmed' }),
+    Booking.countDocuments({ status: 'completed' }),
+    Booking.countDocuments({ status: 'cancelled' }),
+    Booking.countDocuments({ createdAt: { $gte: last7Days } }),
+    Booking.aggregate([
+      { $match: { status: { $in: ['confirmed', 'completed'] } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+    ]),
   ]);
 
   return successResponse(res, {

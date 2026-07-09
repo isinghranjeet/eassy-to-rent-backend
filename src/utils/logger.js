@@ -2,14 +2,14 @@ const { createLogger, format, transports } = require('winston');
 const { v4: uuidv4 } = require('uuid');
 
 /**
- * Generate Correlation ID
+ * Generate correlation ID for request tracking
  */
 const getCorrelationId = (req) => {
   return req.headers['x-correlation-id'] || uuidv4();
 };
 
 /**
- * Middleware
+ * Add correlation ID middleware
  */
 const addCorrelationId = (req, res, next) => {
   req.correlationId = getCorrelationId(req);
@@ -18,7 +18,29 @@ const addCorrelationId = (req, res, next) => {
 };
 
 /**
- * Winston Logger
+ * Create child logger with correlation ID
+ */
+const createChildLogger = (parentLogger, correlationId) => {
+  return {
+    error: (message, meta = {}) =>
+      parentLogger.error(message, { correlationId, ...meta }),
+
+    warn: (message, meta = {}) =>
+      parentLogger.warn(message, { correlationId, ...meta }),
+
+    info: (message, meta = {}) =>
+      parentLogger.info(message, { correlationId, ...meta }),
+
+    debug: (message, meta = {}) =>
+      parentLogger.debug(message, { correlationId, ...meta }),
+
+    http: (message, meta = {}) =>
+      parentLogger.http(message, { correlationId, ...meta }),
+  };
+};
+
+/**
+ * Winston Logger Setup
  */
 const logger = createLogger({
   level:
@@ -42,51 +64,40 @@ const logger = createLogger({
           ? format.combine(format.timestamp(), format.json())
           : format.combine(
               format.colorize(),
-              format.timestamp({
-                format: 'YYYY-MM-DD HH:mm:ss',
-              }),
-              format.printf(
-                ({ timestamp, level, message, correlationId, ...meta }) => {
-                  const corr = correlationId
-                    ? `[${correlationId.substring(0, 8)}] `
+              format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+              format.printf(({ level, message, timestamp, correlationId, ...meta }) => {
+                const corr = correlationId
+                  ? `[${correlationId.slice(0, 8)}] `
+                  : '';
+
+                const extra =
+                  Object.keys(meta).length && level !== 'http'
+                    ? ` ${JSON.stringify(meta)}`
                     : '';
 
-                  const extra =
-                    Object.keys(meta).length > 0
-                      ? ` ${JSON.stringify(meta)}`
-                      : '';
-
-                  return `${timestamp} ${corr}[${level.toUpperCase()}] ${message}${extra}`;
-                }
-              )
+                return `${timestamp} ${corr}[${level.toUpperCase()}] ${message}${extra}`;
+              })
             ),
     }),
   ],
 });
 
 /**
- * Child Logger
+ * IMPORTANT FIX:
+ * Previously this module exported only { logger, createChildLogger, ... },
+ * so `const logger = require('../utils/logger')` (used in bookingController.js)
+ * captured the whole exports object instead of the winston instance,
+ * causing "logger.info is not a function" at runtime.
+ *
+ * Now the winston logger instance IS the module export, with the helper
+ * functions attached as properties. Both of these now work correctly:
+ *   const logger = require('../utils/logger');        // logger.info(...)
+ *   const { logger } = require('../utils/logger');     // logger.info(...)
+ *   const { addCorrelationId } = require('../utils/logger'); // still works
  */
-const createChildLogger = (correlationId) => ({
-  error: (message, meta = {}) =>
-    logger.error(message, { correlationId, ...meta }),
+logger.createChildLogger = createChildLogger;
+logger.getCorrelationId = getCorrelationId;
+logger.addCorrelationId = addCorrelationId;
+logger.logger = logger; // backward-compat for `const { logger } = require(...)`
 
-  warn: (message, meta = {}) =>
-    logger.warn(message, { correlationId, ...meta }),
-
-  info: (message, meta = {}) =>
-    logger.info(message, { correlationId, ...meta }),
-
-  debug: (message, meta = {}) =>
-    logger.debug(message, { correlationId, ...meta }),
-
-  http: (message, meta = {}) =>
-    logger.http(message, { correlationId, ...meta }),
-});
-
-module.exports = {
-  logger,
-  createChildLogger,
-  addCorrelationId,
-  getCorrelationId,
-};
+module.exports = logger;
