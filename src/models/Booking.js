@@ -249,6 +249,9 @@ bookingSchema.virtual('refundEligible').get(function() {
 // ✅ Indexes - Consolidated (removed duplicates)
 bookingSchema.index({ userId: 1, status: 1 });
 bookingSchema.index({ pgId: 1, checkInDate: 1 });
+// Inventory-aware availability checks
+bookingSchema.index({ pgId: 1, roomType: 1, status: 1, checkInDate: 1, checkOutDate: 1 });
+
 bookingSchema.index({ invoiceNumber: 1 }, { sparse: true }); // Single unique index
 bookingSchema.index({ paymentStatus: 1, status: 1 });
 bookingSchema.index({ createdAt: -1 });

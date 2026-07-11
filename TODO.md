@@ -1,18 +1,11 @@
-# Complete Authentication System
+# TODO
 
-**Phase 1 - Fixed:**
-- [x] HEAD /api/auth/login route (200 OK) 
-- [x] User.js - Added verification/recovery fields
-- [x] authController.js - Added otpKey + role-based logic ready
+## Booking availability fix
+- [x] Locate where booking throws 409 "Selected room type is fully booked".
+- [x] Verify availability logic reads `roomInventory[roomType].total/available`.
+- [x] Plan and confirm migration alignment with legacy fields `total/available`.
+- [x] Create one-time MongoDB migration script for existing rooms only.
+- [x] Add verification query to confirm all existing rooms updated.
 
-**Phase 2 - To Complete:**
-- [ ] Role-based login (Admin=OTP, User/Owner=direct)
-- [ ] CAPTCHA for suspicious IPs
-- [ ] Email verification endpoints
-- [ ] Account recovery flow
-- [ ] Test all flows
 
-**Test Command:** `cd pg-finder-backend && npm run dev`
-`curl -I http://localhost:5000/api/auth/login` 
 
-HEAD request now returns 200 OK. Authentication system ready for Phase 2.

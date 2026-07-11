@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 
 const PGListingSchema = new mongoose.Schema({
+  // NOTE: Keep defaults so existing documents remain valid.
+
   // Basic Information
   name: {
     type: String,
@@ -119,10 +121,19 @@ const PGListingSchema = new mongoose.Schema({
   roomTypes: [{
     type: String
   }],
+
+  // ✅ Room inventory (hotel-like capacity per room type)
+  // Backward compatible: older PG documents may not have this field.
+  roomInventory: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+  },
+
   availability: {
     type: String,
     default: 'available'
   },
+
   
   // Status Flags
   published: {
@@ -198,7 +209,112 @@ const PGListingSchema = new mongoose.Schema({
   contactPhone: {
     type: String,
     default: ''
-  }
+  },
+
+  // ============================
+  // EasyToRent Property Registration (NEW)
+  // ============================
+
+  // Property type requested by product: PG or Flat
+  propertyType: {
+    type: String,
+    enum: ['PG', 'FLT'],
+    default: 'PG',
+    required: true,
+    index: true,
+  },
+
+  // Auto-generated unique property number (backend-only)
+  // Example: ETR-PG-00001 / ETR-FLT-00001
+  propertyNumber: {
+    type: String,
+    unique: true,
+    index: true,
+    required: false, // allow migration for old documents
+  },
+
+  // Rooms inventory
+  numberOfRooms: {
+    type: Number,
+    min: [1, 'Number of rooms must be at least 1'],
+    default: 1,
+    required: true,
+  },
+
+  // Instant book toggle
+  instantBooking: {
+    type: Boolean,
+    default: false,
+  },
+
+  // Check-in & check-out timing (future booking system)
+  checkInTime: {
+    type: String,
+    default: '12:00 AM',
+  },
+  checkOutTime: {
+    type: String,
+    default: '12:00 AM',
+  },
+
+  // Verification status requested by product
+  verificationStatus: {
+    type: String,
+    enum: ['Pending', 'Verified', 'Rejected'],
+    default: 'Pending',
+    index: true,
+  },
+
+  // Draft save is represented by published=false (backward compatibility)
+  // Keep published boolean as the existing control.
+
+  // Completion percentage (computed)
+  completionPercentage: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100,
+    index: true,
+  },
+
+  // House rules (Airbnb style)
+  houseRules: [{
+    type: String,
+    trim: true,
+  }],
+
+  // Cover photo support (single primary image)
+  coverPhoto: {
+    type: String,
+    default: '',
+  },
+
+  // Google Maps location details
+  geoAddress: {
+    type: String,
+    default: '',
+  },
+  geoLat: {
+    type: Number,
+    default: null,
+  },
+  geoLng: {
+    type: Number,
+    default: null,
+  },
+
+  // Nearby landmark & distance
+  nearbyLandmark: {
+    type: String,
+    default: '',
+  },
+  distanceKm: {
+    type: Number,
+    default: null,
+    min: 0,
+  },
+
+  // Old system fields continue below...
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -318,6 +434,14 @@ PGListingSchema.methods.setVirtualTour = async function(videoUrl, virtualTour) {
 // ✅ Indexes - Consolidated (removed duplicates)
 PGListingSchema.index({ slug: 1 }); // Single unique index
 PGListingSchema.index({ city: 1 });
+
+// Prevent duplicate registrations: same owner + same property name
+// NOTE: This enforces case-sensitive uniqueness; frontend can normalize if needed later.
+PGListingSchema.index({ ownerId: 1, name: 1 }, { unique: true });
+
+// Inventory-aware searches / filtering (hotel room inventory)
+PGListingSchema.index({ roomInventory: 1 });
+
 PGListingSchema.index({ type: 1, city: 1, published: 1 });
 PGListingSchema.index({ published: 1, price: 1 });
 PGListingSchema.index({ rating: -1, reviewCount: -1 });
@@ -325,6 +449,13 @@ PGListingSchema.index({ createdAt: -1 });
 PGListingSchema.index({ views: -1 });
 PGListingSchema.index({ location: '2dsphere' });
 PGListingSchema.index({ name: 'text', description: 'text', address: 'text', city: 'text' });
+
+// Property number sorting/search support
+PGListingSchema.index({ propertyNumber: 1 });
+
+// Rooms/inventory filters (future)
+PGListingSchema.index({ numberOfRooms: 1 });
+
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 

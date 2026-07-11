@@ -858,6 +858,25 @@ router.post(
     { name: "gallery", maxCount: 20 },
   ]),
   async (req, res) => {
+    const mongoose = require('mongoose');
+    const Counter = require('../models/Counter');
+
+    // NOTE: propertyNumber generation is backend-only and atomic.
+    const generatePropertyNumber = async (propertyType) => {
+      const prefix = propertyType === 'FLT' ? 'ETR-FLT-' : 'ETR-PG-';
+      const key = `propertyNumber:${prefix === 'ETR-FLT-' ? 'FLT' : 'PG'}`;
+
+      const counter = await Counter.findOneAndUpdate(
+        { key },
+        { $inc: { seq: 1 } },
+        { upsert: true, new: true }
+      );
+
+      const seq = counter.seq;
+      const padded = String(seq).padStart(5, '0');
+      return `${prefix}${padded}`;
+    };
+
     try {
       // Parse JSON data from 'data' field if sent as stringified JSON
       let pgData = { ...req.body };
@@ -903,9 +922,36 @@ router.post(
       if (!pgData.contactPhone)
         pgData.contactPhone = pgData.contactPhone || pgData.ownerPhone || "";
 
-      // Create and save
+      // Enforce duplicate prevention: Same owner + same property name
+      const duplicate = await PGListing.findOne({
+        ownerId: pgData.ownerId,
+        name: pgData.name,
+      });
+      if (duplicate) {
+        return res.status(409).json({
+          success: false,
+          message: 'You already have a property with this name.',
+        });
+      }
+
+      // Generate auto propertyNumber (backend-only)
+      if (!pgData.propertyNumber) {
+        // Backward compatible mapping from old `type`.
+        // If frontend sends propertyType use it; else map from pgData.type.
+        const propertyType = pgData.propertyType || (pgData.type === 'family' ? 'PG' : (pgData.type === 'co-ed' ? 'PG' : (pgData.type === 'boys' || pgData.type === 'girls' ? 'PG' : 'PG')));
+        pgData.propertyType = propertyType;
+        pgData.propertyNumber = await generatePropertyNumber(propertyType);
+      }
+
+      // Completion percentage (minimal default; frontend can drive richer computation)
+      pgData.completionPercentage = typeof pgData.completionPercentage === 'number' ? pgData.completionPercentage : 0;
+
+// Create and save
       const listing = new PGListing(pgData);
       await listing.save();
+
+      // Return generated propertyNumber in response (backend-only)
+      pgData.propertyNumber = listing.propertyNumber;
 
       console.log("PG listing created:", listing._id);
 
@@ -1031,6 +1077,27 @@ router.put(
       if (pgData.name && pgData.name !== listing.name) {
         pgData.slug = generateSlug(pgData.name);
       }
+
+      // Never allow editing propertyNumber.
+      if (pgData.propertyNumber) delete pgData.propertyNumber;
+
+      // Recompute completionPercentage (safe fallback)
+      const completionFields = [
+        'name',
+        'description',
+        'address',
+        'price',
+        'amenities',
+        'numberOfRooms',
+        'propertyType',
+        'checkInTime',
+        'checkOutTime',
+      ];
+      const present = completionFields.reduce((acc, k) => {
+        if (k === 'amenities') return acc + (Array.isArray(pgData.amenities) && pgData.amenities.length > 0 ? 1 : 0);
+        return acc + (pgData[k] !== undefined && pgData[k] !== null && pgData[k] !== '' ? 1 : 0);
+      }, 0);
+      pgData.completionPercentage = Math.round((present / completionFields.length) * 100);
 
       // Update the listing
       Object.assign(listing, pgData);

@@ -7,7 +7,8 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 const AppError = require('../utils/AppError');
 const logger = require('../utils/logger'); // FIX: logger is now the winston instance directly (see utils/logger.js)
 const { successResponse } = require('../utils/response');
-const { hasOverlappingBooking, calculateBookingAmount } = require('../services/bookingService');
+const { getRemainingRooms, calculateBookingAmount } = require('../services/bookingService');
+
 
 /**
  * PERFORMANCE NOTE:
@@ -27,6 +28,7 @@ const createBooking = asyncHandler(async (req, res) => {
     guestDetails,
     specialRequests,
   } = req.body;
+
   const userId = req.user._id;
 
   const session = await mongoose.startSession();
@@ -50,16 +52,22 @@ const createBooking = asyncHandler(async (req, res) => {
         throw new AppError('Check-out date must be after check-in date', 400);
       }
 
-      const existingBooking = await hasOverlappingBooking({
+      const resolvedRoomType = roomType || 'Single Occupancy';
+
+
+
+      const inventory = await getRemainingRooms({
         pgId,
+        roomType: resolvedRoomType,
         checkInDate: parsedCheckInDate,
         checkOutDate: parsedCheckOutDate,
         session,
       });
 
-      if (existingBooking) {
-        throw new AppError('Selected dates are already booked for this PG', 409);
+      if (inventory.available <= 0) {
+        throw new AppError('Selected room type is fully booked.', 409);
       }
+
 
       const calculatedTotalAmount = calculateBookingAmount({
         monthlyPrice: pg.price,
@@ -70,7 +78,7 @@ const createBooking = asyncHandler(async (req, res) => {
         [{
           userId,
           pgId,
-          roomType: roomType || 'Single Occupancy',
+          roomType: resolvedRoomType,
           checkInDate: parsedCheckInDate,
           checkOutDate: parsedCheckOutDate,
           durationMonths: Number(durationMonths),
@@ -87,11 +95,42 @@ const createBooking = asyncHandler(async (req, res) => {
       booking = createdBookings[0];
       pgSnapshot = { name: pg.name, city: pg.city };
 
-      await PGListing.updateOne(
-        { _id: pgId },
-        { $inc: { weeklyBookings: 1, monthlyBookings: 1 } },
+      // Atomically decrement available inventory for that room type.
+      // This prevents race conditions under concurrent requests.
+      const decResult = await PGListing.updateOne(
+        {
+          _id: pgId,
+          [`roomInventory.${resolvedRoomType}.available`]: { $gte: 1 },
+        },
+        {
+          $inc: {
+            weeklyBookings: 1,
+            monthlyBookings: 1,
+            [`roomInventory.${resolvedRoomType}.available`]: -1,
+          },
+        },
         { session }
       );
+
+      if (!decResult.acknowledged) {
+        throw new AppError('Inventory update failed', 500);
+      }
+      // If modifiedCount is 0, availability likely changed between our check and update.
+      // Treat that as a fully booked inventory conflict.
+      if (decResult.modifiedCount !== 1) {
+        throw new AppError('Selected room type is fully booked.', 409);
+      }
+
+
+
+      // remainingRooms for API response (optional)
+      // inventory.available is computed before decrement.
+      booking = createdBookings[0];
+      booking.__remainingRooms = Math.max(0, inventory.available - 1);
+
+
+
+
     });
   } finally {
     session.endSession();
@@ -114,11 +153,16 @@ const createBooking = asyncHandler(async (req, res) => {
     logger.error('Activity log error', { error: activityErr.message, bookingId: booking._id });
   }
 
+  const remainingRooms = booking?.__remainingRooms;
+  if (remainingRooms !== undefined) delete booking.__remainingRooms;
+
   return successResponse(res, {
     statusCode: 201,
     message: 'Booking created successfully',
     data: booking,
+    remainingRooms,
   });
+
 });
 
 const getUserBookings = asyncHandler(async (req, res) => {
@@ -151,18 +195,47 @@ const cancelBooking = asyncHandler(async (req, res) => {
     throw new AppError('Invalid booking id', 400);
   }
 
-  const booking = await Booking.findById(req.params.id);
-  if (!booking) throw new AppError('Booking not found', 404);
-  if (booking.userId.toString() !== req.user._id.toString()) throw new AppError('Not authorized', 403);
-  if (booking.status === 'cancelled') throw new AppError('Booking is already cancelled', 400);
-  if (booking.status === 'completed') throw new AppError('Completed bookings cannot be cancelled', 400);
+  const session = await mongoose.startSession();
+  let updatedBooking;
 
-  booking.status = 'cancelled';
-  booking.cancelledAt = new Date();
-  await booking.save();
+  try {
+    await session.withTransaction(async () => {
+      const booking = await Booking.findById(req.params.id).session(session);
+      if (!booking) throw new AppError('Booking not found', 404);
+      if (booking.userId.toString() !== req.user._id.toString()) throw new AppError('Not authorized', 403);
+      if (booking.status === 'cancelled') throw new AppError('Booking is already cancelled', 400);
+      if (booking.status === 'completed') throw new AppError('Completed bookings cannot be cancelled', 400);
 
-  return successResponse(res, { message: 'Booking cancelled successfully', data: booking });
+      // Restore inventory for this room type.
+      const roomTypeToRestore = booking.roomType || 'Single Occupancy';
+      const pgIdToRestore = booking.pgId;
+
+      await PGListing.updateOne(
+        { _id: pgIdToRestore },
+        {
+          $inc: {
+            weeklyBookings: -1,
+            monthlyBookings: -1,
+            [`roomInventory.${roomTypeToRestore}.available`]: 1,
+          },
+        },
+        { session }
+      );
+
+      booking.status = 'cancelled';
+      booking.cancelledAt = new Date();
+
+      await booking.save({ session });
+      updatedBooking = booking;
+    });
+  } finally {
+    session.endSession();
+  }
+
+  return successResponse(res, { message: 'Booking cancelled successfully', data: updatedBooking });
 });
+
+// NOTE: getUserBookings is defined above (user booking listing).
 
 const canReview = asyncHandler(async (req, res) => {
   const { pgId } = req.params;
