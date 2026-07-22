@@ -3,6 +3,7 @@ require('dotenv').config();
 const { startServer, closeServer } = require('./app');
 const mongoose = require('mongoose');
 const { logger } = require('./utils/logger');
+const { startBlogScheduler } = require('./jobs/blogSchedulerJob');
 
 // ======================
 // CONFIGURATION
@@ -170,6 +171,9 @@ const bootstrap = async () => {
     
     logger.info('🚀 Server startup complete');
     logger.info(`📡 API available at: http://localhost:${PORT}`);
+    
+    // Start background jobs
+    startBlogScheduler();
     
     // Log startup success with timestamp
     logger.info(`✅ Application started successfully at ${new Date().toISOString()}`);

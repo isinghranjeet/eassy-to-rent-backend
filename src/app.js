@@ -29,6 +29,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const recommendationRoutes = require('./routes/recommendationRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const userRoutes = require('./routes/userRoutes');
+const profileRoutes = require('./routes/profileRoutes');
 const { registerApiRoutes } = require('./routes/registerApiRoutes');
 const { registerWebhookRoutes } = require('./routes/registerWebhookRoutes');
 
@@ -43,6 +44,7 @@ const { seedAllAdminData } = require('./utils/seedAdminData');
 
 // Import cron jobs
 require('./jobs/wishlistReminderJob');
+const { startBlogScheduler } = require('./jobs/blogSchedulerJob');
 
 const app = express();
 let server = null;
@@ -242,7 +244,8 @@ registerApiRoutes(app, {
   recommendationRoutes,
   statsRoutes,
   userRoutes,
-  adminRoutes
+  adminRoutes,
+  profileRoutes,
 });
 
 registerWebhookRoutes(app, express);

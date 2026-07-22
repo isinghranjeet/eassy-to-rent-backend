@@ -2,15 +2,30 @@ const mongoose = require('mongoose');
 
 const activitySchema = new mongoose.Schema(
   {
-    type: {
+  type: {
       type: String,
       required: true,
       enum: [
+        'USER_LOGIN',
         'USER_REGISTERED',
+        'USER_SUSPENDED',
+        'USER_ACTIVATED',
         'PG_CREATED',
+        'PG_UPDATED',
+        'PG_DELETED',
+        'PG_VERIFIED',
+        'PG_FEATURED',
         'BOOKING_CREATED',
+        'BOOKING_CANCELLED',
+        'BOOKING_CONFIRMED',
         'PAYMENT_SUCCESS',
-        'REVIEW_PENDING',
+        'PAYMENT_FAILED',
+        'REVIEW_SUBMITTED',
+        'REVIEW_APPROVED',
+        'REVIEW_REJECTED',
+        'WISHLIST_ADDED',
+        'ADMIN_LOGIN',
+        'ADMIN_ACTION',
       ],
     },
     message: {

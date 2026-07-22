@@ -52,11 +52,26 @@ const getAdminActivity = asyncHandler(async (req, res) => {
 // Map internal activity types to frontend ActivityEventType values
 function mapActivityType(type) {
   const typeMap = {
+    USER_LOGIN: 'user_login',
     USER_REGISTERED: 'user_signup',
+    USER_SUSPENDED: 'user_suspended',
+    USER_ACTIVATED: 'user_activated',
     PG_CREATED: 'pg_created',
+    PG_UPDATED: 'pg_updated',
+    PG_DELETED: 'pg_deleted',
+    PG_VERIFIED: 'pg_verified',
+    PG_FEATURED: 'pg_featured',
     BOOKING_CREATED: 'booking_created',
+    BOOKING_CANCELLED: 'booking_cancelled',
+    BOOKING_CONFIRMED: 'booking_confirmed',
     PAYMENT_SUCCESS: 'payment_success',
-    REVIEW_PENDING: 'review_submitted',
+    PAYMENT_FAILED: 'payment_failure',
+    REVIEW_SUBMITTED: 'review_submitted',
+    REVIEW_APPROVED: 'review_approved',
+    REVIEW_REJECTED: 'review_rejected',
+    WISHLIST_ADDED: 'wishlist_added',
+    ADMIN_LOGIN: 'admin_login',
+    ADMIN_ACTION: 'admin_action',
   };
   return typeMap[type] || type;
 }

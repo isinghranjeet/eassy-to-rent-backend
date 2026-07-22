@@ -16,6 +16,7 @@ function registerApiRoutes(app, routes) {
     userRoutes,
     adminRoutes,
     contactRoutes,
+    profileRoutes,
   } = routes;
 
   app.use('/api/pg', pgRoutes);
@@ -43,6 +44,7 @@ function registerApiRoutes(app, routes) {
   app.use('/api/recommendations', recommendationRoutes);
   app.use('/api/stats', statsRoutes);
   app.use('/api/users', userRoutes);
+  app.use('/api/profile', profileRoutes);
 
   // Admin routes
   if (adminRoutes) {

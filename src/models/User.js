@@ -172,7 +172,69 @@ const userSchema = new mongoose.Schema({
     type: Number, 
     default: 0 
   },
-  lockedUntil: Date
+  lockedUntil: Date,
+
+  // ==================== PROFILE FIELDS ====================
+  gender: {
+    type: String,
+    enum: ['male', 'female', 'other', 'prefer-not-to-say', ''],
+    default: ''
+  },
+  dateOfBirth: {
+    type: Date,
+    default: null
+  },
+  occupation: {
+    type: String,
+    default: ''
+  },
+  college: {
+    type: String,
+    default: ''
+  },
+  address: {
+    type: String,
+    default: ''
+  },
+  city: {
+    type: String,
+    default: ''
+  },
+  state: {
+    type: String,
+    default: ''
+  },
+  country: {
+    type: String,
+    default: 'India'
+  },
+
+  // ==================== SETTINGS ====================
+  emailNotifications: {
+    type: Boolean,
+    default: true
+  },
+  bookingUpdates: {
+    type: Boolean,
+    default: true
+  },
+  propertyAlerts: {
+    type: Boolean,
+    default: true
+  },
+  marketingEmails: {
+    type: Boolean,
+    default: false
+  },
+  pushNotifications: {
+    type: Boolean,
+    default: true
+  },
+  profileVisibility: {
+    type: String,
+    enum: ['public', 'private', 'contacts-only'],
+    default: 'public'
+  }
 
 });
 
