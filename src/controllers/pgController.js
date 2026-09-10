@@ -110,7 +110,6 @@ limit = 20
     
     let query = {};
     
-    if
     if (published === 'true') query.published = true;
     if (published === 'false') query.published = false;
     if (featured === 'true') query.featured = true;

@@ -12,6 +12,11 @@ const bookingSchema = new mongoose.Schema({
     ref: 'PGListing',
     required: true
   },
+  idempotencyKey: {
+    type: String,
+    trim: true,
+    default: undefined
+  },
   roomType: {
     type: String,
     required: true,
@@ -34,6 +39,16 @@ const bookingSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  amountPaid: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  amountDue: {
+    type: Number,
+    default: null,
+    min: 0
+  },
   discountApplied: {
     type: Number,
     default: 0
@@ -49,22 +64,27 @@ const bookingSchema = new mongoose.Schema({
   // Payment Status
   paymentStatus: {
     type: String,
-    enum: ['pending', 'processing', 'paid', 'failed', 'refunded', 'partially_refunded'],
+    enum: ['pending', 'processing', 'partially_paid', 'paid', 'failed', 'refunded', 'partially_refunded'],
     default: 'pending'
   },
   
   // Payment Gateway Fields
   razorpayOrderId: {
     type: String,
-    default: ''
+    default: undefined
   },
   razorpayPaymentId: {
     type: String,
-    default: ''
+    default: undefined
   },
   razorpaySignature: {
     type: String,
     default: ''
+  },
+  pendingPaymentAmount: {
+    type: Number,
+    default: null,
+    min: 0
   },
   
   // ✅ NEW: Multi-Provider Support
@@ -88,6 +108,15 @@ const bookingSchema = new mongoose.Schema({
   },
   paymentCompletedAt: {
     type: Date
+  },
+  paymentReceiptStatus: {
+    type: String,
+    enum: ['pending', 'sending', 'sent', 'failed'],
+    default: 'pending'
+  },
+  paymentReceiptMessageId: {
+    type: String,
+    default: ''
   },
   
   // ✅ NEW: Refund Tracking
@@ -199,12 +228,17 @@ bookingSchema.virtual('paymentStatusDisplay').get(function() {
   const statusMap = {
     'pending': 'Awaiting Payment',
     'processing': 'Processing Payment',
+    'partially_paid': 'Partially Paid',
     'paid': 'Payment Completed',
     'failed': 'Payment Failed',
     'refunded': 'Refunded',
     'partially_refunded': 'Partially Refunded'
   };
   return statusMap[this.paymentStatus] || this.paymentStatus;
+});
+
+bookingSchema.virtual('calculatedAmountDue').get(function() {
+  return Math.max(0, Number(this.totalAmount || 0) - Number(this.amountPaid || 0));
 });
 
 // ✅ Virtual for booking status display
@@ -248,6 +282,7 @@ bookingSchema.virtual('refundEligible').get(function() {
 
 // ✅ Indexes - Consolidated (removed duplicates)
 bookingSchema.index({ userId: 1, status: 1 });
+bookingSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
 bookingSchema.index({ pgId: 1, checkInDate: 1 });
 // Inventory-aware availability checks
 bookingSchema.index({ pgId: 1, roomType: 1, status: 1, checkInDate: 1, checkOutDate: 1 });
@@ -255,7 +290,8 @@ bookingSchema.index({ pgId: 1, roomType: 1, status: 1, checkInDate: 1, checkOutD
 bookingSchema.index({ invoiceNumber: 1 }, { sparse: true }); // Single unique index
 bookingSchema.index({ paymentStatus: 1, status: 1 });
 bookingSchema.index({ createdAt: -1 });
-bookingSchema.index({ razorpayOrderId: 1, sparse: true });
+bookingSchema.index({ razorpayOrderId: 1 }, { unique: true, sparse: true });
+bookingSchema.index({ razorpayPaymentId: 1 }, { unique: true, sparse: true });
 bookingSchema.index({ checkInDate: 1, status: 1 });
 
 // TTL index for pending payments

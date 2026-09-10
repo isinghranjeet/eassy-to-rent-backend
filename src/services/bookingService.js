@@ -62,7 +62,9 @@ const calculateBookingAmount = ({ monthlyPrice, durationMonths }) => {
     throw new Error('Invalid booking duration');
   }
 
-  return Math.round(safeMonthlyPrice * safeDuration);
+  const baseTotal = safeMonthlyPrice * safeDuration;
+  const discountRate = safeDuration >= 6 ? 0.15 : safeDuration >= 3 ? 0.10 : 0;
+  return Math.round(baseTotal * (1 - discountRate));
 };
 
 module.exports = {

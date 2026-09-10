@@ -17,12 +17,12 @@ const paymentLogSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['initiated', 'processing', 'success', 'failed', 'refunded'],
+    enum: ['pending', 'initiated', 'processing', 'success', 'failed', 'refunded'],
     default: 'initiated'
   },
   paymentMethod: {
     type: String,
-    enum: ['razorpay', 'stripe', 'card', 'upi', 'netbanking'],
+    enum: ['razorpay', 'stripe', 'card', 'upi', 'upi_qr', 'manual', 'netbanking'],
     default: 'razorpay'
   },
   paymentId: String,
@@ -31,6 +31,12 @@ const paymentLogSchema = new mongoose.Schema({
   ipAddress: String,
   userAgent: String,
   metadata: mongoose.Schema.Types.Mixed
+  ,receiptStatus: {
+    type: String,
+    enum: ['pending', 'sending', 'sent', 'failed'],
+    default: 'pending'
+  },
+  receiptMessageId: String
 }, {
   timestamps: true
 });
@@ -38,5 +44,6 @@ const paymentLogSchema = new mongoose.Schema({
 paymentLogSchema.index({ bookingId: 1, createdAt: -1 });
 paymentLogSchema.index({ userId: 1, createdAt: -1 });
 paymentLogSchema.index({ status: 1 });
+paymentLogSchema.index({ paymentId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('PaymentLog', paymentLogSchema);

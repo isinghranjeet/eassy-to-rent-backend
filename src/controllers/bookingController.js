@@ -30,6 +30,14 @@ const createBooking = asyncHandler(async (req, res) => {
   } = req.body;
 
   const userId = req.user._id;
+  const idempotencyKey = req.get('Idempotency-Key');
+
+  if (idempotencyKey) {
+    const existingBooking = await Booking.findOne({ userId, idempotencyKey });
+    if (existingBooking) {
+      return successResponse(res, { message: 'Booking already created', data: existingBooking });
+    }
+  }
 
   const session = await mongoose.startSession();
   let booking;
@@ -78,11 +86,14 @@ const createBooking = asyncHandler(async (req, res) => {
         [{
           userId,
           pgId,
+          idempotencyKey: idempotencyKey || undefined,
           roomType: resolvedRoomType,
           checkInDate: parsedCheckInDate,
           checkOutDate: parsedCheckOutDate,
           durationMonths: Number(durationMonths),
           totalAmount: calculatedTotalAmount,
+          amountPaid: 0,
+          amountDue: calculatedTotalAmount,
           guestDetails: guestDetails || {},
           specialRequests: specialRequests || '',
           status: 'pending',
@@ -202,7 +213,7 @@ const cancelBooking = asyncHandler(async (req, res) => {
     await session.withTransaction(async () => {
       const booking = await Booking.findById(req.params.id).session(session);
       if (!booking) throw new AppError('Booking not found', 404);
-      if (booking.userId.toString() !== req.user._id.toString()) throw new AppError('Not authorized', 403);
+      if (booking.userId.toString() !== req.user._id.toString() && req.user.role !== 'admin') throw new AppError('Not authorized', 403);
       if (booking.status === 'cancelled') throw new AppError('Booking is already cancelled', 400);
       if (booking.status === 'completed') throw new AppError('Completed bookings cannot be cancelled', 400);
 
@@ -254,6 +265,7 @@ const canReview = asyncHandler(async (req, res) => {
       userId,
       pgId,
       status: { $in: ['completed', 'confirmed'] },
+      paymentStatus: { $in: ['paid', 'partially_paid'] },
     }).lean(),
     Review.findOne({ user: userId, pgListing: pgId }).lean(),
   ]);
@@ -363,6 +375,9 @@ const updateBookingStatus = asyncHandler(async (req, res) => {
   };
 
   const currentStatus = booking.status;
+  if (status === 'confirmed' && booking.paymentStatus !== 'paid') {
+    throw new AppError('A booking cannot be confirmed before payment is verified', 409);
+  }
   if (!allowedTransitions[currentStatus] || !allowedTransitions[currentStatus].includes(status)) {
     throw new AppError(`Invalid status transition from ${currentStatus} to ${status}`, 400);
   }

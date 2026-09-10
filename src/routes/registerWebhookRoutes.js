@@ -1,9 +1,15 @@
+const { paymentWebhook } = require('../controllers/advancedPaymentController');
+
 function paymentWebhookHandler(req, res) {
-  // Handle webhook from payment gateway
-  const signature = req.headers['x-razorpay-signature'];
-  // Process webhook (implement in controller)
-  console.log('Webhook received:', req.body, signature ? '[signature]' : '[no-signature]');
-  res.json({ success: true });
+  try {
+    if (Buffer.isBuffer(req.body)) {
+      req.rawBody = req.rawBody || req.body;
+      req.body = JSON.parse(req.body.toString('utf8'));
+    }
+    return paymentWebhook(req, res);
+  } catch {
+    return res.status(400).json({ success: false, message: 'Invalid webhook payload' });
+  }
 }
 
 function registerWebhookRoutes(app, express) {

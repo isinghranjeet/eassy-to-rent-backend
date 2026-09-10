@@ -1,6 +1,6 @@
 // backend/src/routes/paymentRoutes.js
 const express = require('express');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, adminOnly } = require('../middleware/authMiddleware');
 const {
   createCallCreditOrder,
   verifyCallCreditPayment,
@@ -20,7 +20,7 @@ try {
   advancedPayment = {};
 }
 
-const { initializePayment, verifyPayment, getPaymentHistory } = advancedPayment;
+const { initializePayment, verifyPayment, getPaymentHistory, getPaymentStatus, refundPayment, submitManualPayment, approveManualPayment } = advancedPayment;
 
 const router = express.Router();
 
@@ -47,6 +47,18 @@ if (getPaymentHistory) {
   console.log('✅ Route registered: GET /history');
 } else {
   console.warn('⚠️ getPaymentHistory not found — GET /history will be unavailable');
+}
+if (getPaymentStatus) {
+  router.get('/status/:bookingId', getPaymentStatus);
+}
+if (submitManualPayment) {
+  router.post('/manual', submitManualPayment);
+}
+if (approveManualPayment) {
+  router.post('/manual/:paymentId/approve', adminOnly, approveManualPayment);
+}
+if (refundPayment) {
+  router.post('/refund', adminOnly, refundPayment);
 }
 
 // Card/Razorpay routes (Call Credits)

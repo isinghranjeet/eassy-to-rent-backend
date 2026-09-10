@@ -176,6 +176,31 @@ const sendBookingConfirmation = async (user, booking) => {
   });
 };
 
+  const sendPaymentReceipt = async ({ user, booking, payment }) => {
+    const html = `
+      <h2>Payment Successful</h2>
+      <p>Dear ${user.name || 'Customer'},</p>
+      <p>Your EasyToRent booking payment has been verified successfully.</p>
+      <table cellpadding="8">
+        <tr><td>Booking ID</td><td>${booking._id}</td></tr>
+        <tr><td>Property</td><td>${booking.pgId?.name || 'EasyToRent property'}</td></tr>
+        <tr><td>Room / Unit</td><td>${booking.roomType}</td></tr>
+        <tr><td>Dates</td><td>${new Date(booking.checkInDate).toLocaleDateString('en-IN')} - ${new Date(booking.checkOutDate).toLocaleDateString('en-IN')}</td></tr>
+        <tr><td>Amount Paid</td><td>${payment.currency} ${Number(payment.amount).toLocaleString('en-IN')}</td></tr>
+        <tr><td>Payment ID</td><td>${payment.paymentId}</td></tr>
+        <tr><td>Order ID</td><td>${payment.orderId}</td></tr>
+        <tr><td>Status</td><td>Confirmed</td></tr>
+      </table>
+      <p>For support, contact support@easytorent.in.</p>
+      <p>EasyToRent</p>
+    `;
+
+    return sendEmail({
+      email: user.email,
+      subject: `Payment Receipt - EasyToRent Booking #${booking._id}`,
+      html,
+    });
+  };
 /**
  * Offer Email
  */
@@ -238,6 +263,7 @@ module.exports = {
   sendOtpEmail,
   sendWishlistReminder,
   sendBookingConfirmation,
+  sendPaymentReceipt,
   sendOfferEmail,
   sendPriceDropAlert,
   sendWelcomeEmail,

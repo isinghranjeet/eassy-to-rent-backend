@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const objectId = Joi.string().pattern(/^[0-9a-fA-F]{24}$/);
+
 // ──────────────────────────────────────────────
 // Blog Category Validation
 // ──────────────────────────────────────────────
@@ -82,7 +84,7 @@ const createBlogSchema = Joi.object({
   content: Joi.string().min(1).required(),
 
   // Media
-  featuredImage: Joi.string().uri().allow('').default(''),
+  featuredImage: Joi.string().uri().required(),
   featuredImageAlt: Joi.string().allow('').default(''),
   featuredImageWidth: Joi.number().integer().min(0).default(0),
   featuredImageHeight: Joi.number().integer().min(0).default(0),
@@ -96,9 +98,9 @@ const createBlogSchema = Joi.object({
   ).default([]),
 
 // Classification
-  category: Joi.string().allow('', null).default(null),
-  tags: Joi.array().items(Joi.string()).default([]),
-  authorRef: Joi.string().allow('', null).default(null),
+  category: objectId.required(),
+  tags: Joi.array().items(objectId).default([]),
+  authorRef: objectId.allow('', null).default(null),
 
   // Status
   status: Joi.string().valid('draft', 'published', 'scheduled', 'archived').default('draft'),
@@ -107,10 +109,10 @@ const createBlogSchema = Joi.object({
   featured: Joi.boolean().default(false),
 
   // Relations
-  relatedProperties: Joi.array().items(Joi.string()).default([]),
+  relatedProperties: Joi.array().items(objectId).default([]),
   relatedCities: Joi.array().items(Joi.string()).default([]),
   relatedColleges: Joi.array().items(Joi.string()).default([]),
-  relatedLocations: Joi.array().items(Joi.string()).default([]),
+  relatedLocations: Joi.array().items(objectId).default([]),
   relatedAmenities: Joi.array().items(Joi.string()).default([]),
   internalLinks: Joi.array().items(
     Joi.object({
@@ -153,9 +155,12 @@ const createBlogSchema = Joi.object({
 });
 
 const updateBlogSchema = createBlogSchema.fork(
-  ['title', 'shortDescription', 'content'],
+  ['title', 'shortDescription', 'content', 'featuredImage', 'category'],
   (schema) => schema.optional()
-);
+).keys({
+  featuredImage: Joi.string().uri().allow('').optional(),
+  category: objectId.allow('', null).optional(),
+});
 
 // ──────────────────────────────────────────────
 // Blog Status Update Validation

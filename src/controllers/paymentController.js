@@ -8,11 +8,13 @@ const { asyncHandler } = require('../middleware/asyncHandler');
 const AppError = require('../utils/AppError');
 const { successResponse } = require('../utils/response');
 
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_SflfuTdO7GtSJg',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || 'z96jUOnHgrXvouEqxVb5AAr1'
-});
+// Initialize Razorpay only when server-side credentials are configured.
+const razorpay = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET
+  ? new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  })
+  : null;
 
 // Get user credit balance
 const getCreditBalance = asyncHandler(async (req, res) => {
@@ -158,6 +160,7 @@ const verifyUPIPayment = asyncHandler(async (req, res) => {
 
 // Create Razorpay order for card payments
 const createCallCreditOrder = asyncHandler(async (req, res) => {
+  if (!razorpay) throw new AppError('Payment gateway is not configured', 503);
     const amount = Number(req.body.amount ?? 10);
     const userId = req.user._id;
     if (!amount || amount <= 0) throw new AppError('Amount must be a positive number', 400);

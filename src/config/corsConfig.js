@@ -27,7 +27,7 @@ function applyCors(app) {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Payment-Token'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Payment-Token', 'Idempotency-Key'],
       exposedHeaders: ['X-Total-Count', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
     })
   );

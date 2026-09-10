@@ -3,6 +3,7 @@ const router = express.Router();
 const Review = require('../models/Review');
 const PGListing = require('../models/PGListing');
 const Activity = require('../models/Activity');
+const Booking = require('../models/Booking');
 const { protect } = require('../middleware/authMiddleware');
 
 // @desc    Create a review
@@ -22,6 +23,17 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({ error: 'You have already reviewed this PG' });
     }
 
+    const qualifyingBooking = await Booking.findOne({
+      userId: req.user._id,
+      pgId,
+      status: { $in: ['confirmed', 'completed'] },
+      paymentStatus: { $in: ['paid', 'partially_paid'] },
+    }).lean();
+
+    if (!qualifyingBooking) {
+      return res.status(403).json({ error: 'You can review this property after booking it' });
+    }
+
     // ✅ Create review with pending status
     const review = new Review({
       user: req.user._id,
@@ -29,7 +41,8 @@ router.post('/', protect, async (req, res) => {
       rating,
       title,
       comment,
-      status: 'pending'  // ✅ Pending admin approval
+      status: 'pending',  // ✅ Pending admin approval
+      verifiedBooking: true,
     });
 
     const createdReview = await review.save();

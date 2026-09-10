@@ -421,6 +421,10 @@ const getAdminPGs = asyncHandler(async (req, res) => {
       case 'verified':
         query.verified = true;
         break;
+      case 'pending':
+        query.verified = false;
+        query.published = true;
+        break;
       case 'unverified':
         query.verified = false;
         break;
