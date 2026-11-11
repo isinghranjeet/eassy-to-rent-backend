@@ -24,11 +24,23 @@ const PGListingSchema = new mongoose.Schema({
   city: {
     type: String,
     required: true,
-    default: 'Chandigarh'
+    default: 'Chandigarh',
+    trim: true,
   },
   locality: {
     type: String,
-    default: ''
+    default: '',
+    trim: true,
+  },
+  locationSlug: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    index: true,
+  },
+  locationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Location',
   },
   address: {
     type: String,
@@ -131,7 +143,9 @@ const PGListingSchema = new mongoose.Schema({
 
   availability: {
     type: String,
-    default: 'available'
+    default: 'available',
+    lowercase: true,
+    trim: true,
   },
 
   
@@ -385,6 +399,15 @@ PGListingSchema.virtual('lng').get(function() {
   return this.coordinates?.lng || this.location?.coordinates?.[0] || null;
 });
 
+PGListingSchema.virtual('rent').get(function() {
+  return this.price;
+});
+
+PGListingSchema.virtual('isAvailable').get(function() {
+  return this.published && !['unavailable', 'rented', 'deleted', 'occupied', 'full']
+    .includes(String(this.availability || '').toLowerCase());
+});
+
 // ✅ NEW: Virtual to get video embed URL
 PGListingSchema.virtual('videoEmbedUrl').get(function() {
   if (!this.videoUrl) return null;
@@ -468,6 +491,7 @@ PGListingSchema.methods.setVirtualTour = async function(videoUrl, virtualTour) {
 // ✅ Indexes - Consolidated (removed duplicates)
 PGListingSchema.index({ slug: 1 }); // Single unique index
 PGListingSchema.index({ city: 1 });
+PGListingSchema.index({ locationSlug: 1, published: 1, availability: 1 });
 
 // Prevent duplicate registrations: same owner + same property name
 // NOTE: This enforces case-sensitive uniqueness; frontend can normalize if needed later.

@@ -13,6 +13,7 @@ const { applySecurityMiddleware } = require('./config/securityMiddleware');
 const { applyCors } = require('./config/corsConfig');
 const { applyRateLimiters } = require('./config/rateLimiters');
 const pgRoutes = require('./routes/pg');
+const propertyRoutes = require('./routes/propertyRoutes');
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookingRoutes');
 const reviewRoutes = require('./routes/reviews');
@@ -240,6 +241,7 @@ if (process.env.NODE_ENV === 'development') {
 // ======================
 registerApiRoutes(app, {
   pgRoutes,
+  propertyRoutes,
   authRoutes,
   bookingRoutes,
   reviewRoutes,

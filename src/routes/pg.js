@@ -511,6 +511,7 @@ const Activity = require("../models/Activity");
 const { uploadImage } = require("../utils/cloudinary");
 const { protect, ownerOrAdmin } = require("../middleware/authMiddleware");
 const upload = require("../middleware/uploadMiddleware");
+const { ensureLocation, syncLocationMetadata } = require("../utils/locationUtils");
 
 // @desc    Get owner's own listings
 // @route   GET /api/pg/my-listings
@@ -975,9 +976,14 @@ router.post(
       // Completion percentage (minimal default; frontend can drive richer computation)
       pgData.completionPercentage = typeof pgData.completionPercentage === 'number' ? pgData.completionPercentage : 0;
 
-// Create and save
+      const { location } = await ensureLocation(pgData.locality, pgData.city);
+      pgData.locationSlug = location.slug;
+      pgData.locationId = location._id;
+
+      // Create and save
       const listing = new PGListing(pgData);
       await listing.save();
+      await syncLocationMetadata(location.slug);
 
       // Return generated propertyNumber in response (backend-only)
       pgData.propertyNumber = listing.propertyNumber;
@@ -1006,6 +1012,10 @@ router.post(
       });
     } catch (error) {
       console.error("Error creating PG:", error);
+
+      if (error instanceof TypeError && error.message.startsWith('Location')) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
 
       if (error.name === "ValidationError") {
         const messages = Object.values(error.errors).map((err) => err.message);
@@ -1129,11 +1139,22 @@ router.put(
       }, 0);
       pgData.completionPercentage = Math.round((present / completionFields.length) * 100);
 
+      const previousLocationSlug = listing.locationSlug;
+      const nextCity = pgData.city !== undefined ? pgData.city : listing.city;
+      const nextLocality = pgData.locality !== undefined ? pgData.locality : listing.locality;
+      const { location } = await ensureLocation(nextLocality, nextCity);
+      pgData.locationSlug = location.slug;
+      pgData.locationId = location._id;
+
       // Update the listing
       Object.assign(listing, pgData);
       listing.updatedAt = Date.now();
 
       await listing.save();
+      if (previousLocationSlug && previousLocationSlug !== location.slug) {
+        await syncLocationMetadata(previousLocationSlug);
+      }
+      await syncLocationMetadata(location.slug);
 
       console.log("PG listing updated:", listing._id);
 
@@ -1144,6 +1165,10 @@ router.put(
       });
     } catch (error) {
       console.error("Error updating PG:", error);
+
+      if (error instanceof TypeError && error.message.startsWith('Location')) {
+        return res.status(400).json({ success: false, message: error.message });
+      }
 
       if (error.name === "ValidationError") {
         const messages = Object.values(error.errors).map((err) => err.message);
@@ -1209,11 +1234,22 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
         });
     }
 
+    const previousLocationSlug = listing.locationSlug;
+    const nextCity = req.body.city !== undefined ? req.body.city : listing.city;
+    const nextLocality = req.body.locality !== undefined ? req.body.locality : listing.locality;
+    const { location } = await ensureLocation(nextLocality, nextCity);
+
     // Update only provided fields
     Object.assign(listing, req.body);
+    listing.locationSlug = location.slug;
+    listing.locationId = location._id;
     listing.updatedAt = Date.now();
 
     await listing.save();
+    if (previousLocationSlug && previousLocationSlug !== location.slug) {
+      await syncLocationMetadata(previousLocationSlug);
+    }
+    await syncLocationMetadata(location.slug);
 
     res.json({
       success: true,
@@ -1222,6 +1258,9 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error("Error patching PG:", error);
+    if (error instanceof TypeError && error.message.startsWith('Location')) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({
       success: false,
       message: "Server error",
@@ -1308,7 +1347,13 @@ router.delete("/:id", protect, ownerOrAdmin, async (req, res) => {
         });
     }
 
+    let locationSlug = listing.locationSlug;
+    if (!locationSlug) {
+      const { location } = await ensureLocation(listing.locality, listing.city);
+      locationSlug = location.slug;
+    }
     await listing.deleteOne();
+    if (locationSlug) await syncLocationMetadata(locationSlug);
 
     res.json({
       success: true,

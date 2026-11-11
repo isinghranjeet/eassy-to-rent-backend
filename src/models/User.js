@@ -70,6 +70,7 @@ const userSchema = new mongoose.Schema({
 
   kyc: {
     idType: { type: String, default: '' },
+    idNumber: { type: String, default: '' },
     frontDocument: { type: String, default: '' },
     backDocument: { type: String, default: '' },
     status: {

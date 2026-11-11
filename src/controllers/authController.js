@@ -439,7 +439,6 @@ exports.updateProfile = async (req, res, next) => {
       'officeAddress',
       'payoutDetails',
       'kycDetails',
-      'kyc',
     ].some((field) => req.body[field] !== undefined);
 
     if (hasOwnerProfileFields && user.role !== 'owner') {
@@ -520,6 +519,7 @@ exports.updateProfile = async (req, res, next) => {
           ? req.body.kyc && typeof req.body.kyc === 'object' && !Array.isArray(req.body.kyc)
             ? {
                 idType: req.body.kyc.idType,
+                idNumber: req.body.kyc.idNumber,
                 frontDocumentUrl: req.body.kyc.frontDocument,
                 backDocumentUrl: req.body.kyc.backDocument,
               }
@@ -530,8 +530,16 @@ exports.updateProfile = async (req, res, next) => {
         if (!kycDetails || typeof kycDetails !== 'object' || Array.isArray(kycDetails)) {
           return errorResponse(res, { statusCode: 400, message: 'KYC details must be an object' });
         }
-        const { idType, frontDocumentUrl, backDocumentUrl } = kycDetails;
-        const validIdTypes = ['Aadhaar', 'Government ID', 'Driving License'];
+        const { idType, idNumber, frontDocumentUrl, backDocumentUrl } = kycDetails;
+        const validIdTypes = [
+          'Aadhaar',
+          'Aadhaar Card',
+          'Government ID',
+          'College Student ID',
+          'PAN Card',
+          'Driving License',
+          'Passport',
+        ];
         const validDocumentReference = (value) => (
           typeof value === 'string' &&
           value.length <= 7_200_000 &&
@@ -549,6 +557,9 @@ exports.updateProfile = async (req, res, next) => {
         if (idType !== undefined && !validIdTypes.includes(idType)) {
           return errorResponse(res, { statusCode: 400, message: 'Please select a supported ID type' });
         }
+        if (idNumber !== undefined && (typeof idNumber !== 'string' || idNumber.length > 100)) {
+          return errorResponse(res, { statusCode: 400, message: 'ID number must be 100 characters or fewer' });
+        }
         if (frontDocumentUrl !== undefined && !validDocumentReference(frontDocumentUrl)) {
           return errorResponse(res, { statusCode: 400, message: 'Front ID document must be a supported image or PDF up to 5 MB' });
         }
@@ -560,6 +571,7 @@ exports.updateProfile = async (req, res, next) => {
           : user.kyc?.idType || user.kycDetails?.idType || 'Government ID';
         user.set('kycDetails.idType', effectiveIdType);
         user.set('kyc.idType', effectiveIdType);
+        if (idNumber !== undefined) user.set('kyc.idNumber', idNumber.trim());
         if (frontDocumentUrl !== undefined) user.set('kycDetails.frontDocumentUrl', frontDocumentUrl);
         if (backDocumentUrl !== undefined) user.set('kycDetails.backDocumentUrl', backDocumentUrl);
         user.set('kyc.frontDocument', nextFrontDocument);
@@ -576,6 +588,60 @@ exports.updateProfile = async (req, res, next) => {
           user.set('kyc.reviewedAt', undefined);
         }
       }
+    }
+
+    if (req.body.kyc !== undefined && !['owner', 'user'].includes(user.role)) {
+      return errorResponse(res, { statusCode: 403, message: 'Only tenant and owner accounts can submit KYC details' });
+    }
+
+    if (user.role === 'user' && req.body.kyc !== undefined) {
+      const submittedKyc = req.body.kyc;
+      if (!submittedKyc || typeof submittedKyc !== 'object' || Array.isArray(submittedKyc)) {
+        return errorResponse(res, { statusCode: 400, message: 'KYC details must be an object' });
+      }
+      if (['pending', 'verified'].includes(user.kyc?.status)) {
+        return errorResponse(res, {
+          statusCode: 409,
+          message: 'KYC details cannot be changed while verification is pending or verified',
+        });
+      }
+
+      const { idType, idNumber, frontDocument, backDocument } = submittedKyc;
+      const validIdTypes = ['Aadhaar Card', 'College Student ID', 'PAN Card', 'Driving License', 'Passport'];
+      const validDocumentReference = (value) => (
+        typeof value === 'string' &&
+        value.length <= 7_200_000 &&
+        (value === '' || /^https:\/\//i.test(value) || /^data:(image\/(?:jpeg|png)|application\/pdf);base64,/i.test(value))
+      );
+      if (typeof idType !== 'string' || !validIdTypes.includes(idType)) {
+        return errorResponse(res, { statusCode: 400, message: 'Please select a supported ID type' });
+      }
+      if (idNumber !== undefined && (typeof idNumber !== 'string' || idNumber.length > 100)) {
+        return errorResponse(res, { statusCode: 400, message: 'ID number must be 100 characters or fewer' });
+      }
+      if (frontDocument !== undefined && !validDocumentReference(frontDocument)) {
+        return errorResponse(res, { statusCode: 400, message: 'Front ID document must be a supported image or PDF up to 5 MB' });
+      }
+      if (backDocument !== undefined && !validDocumentReference(backDocument)) {
+        return errorResponse(res, { statusCode: 400, message: 'Back ID document must be a supported image or PDF up to 5 MB' });
+      }
+
+      const currentFrontDocument = user.kyc?.frontDocument || '';
+      const currentBackDocument = user.kyc?.backDocument || '';
+      const nextFrontDocument = frontDocument !== undefined ? frontDocument : currentFrontDocument;
+      const nextBackDocument = backDocument !== undefined ? backDocument : currentBackDocument;
+      if (!nextFrontDocument || !nextBackDocument) {
+        return errorResponse(res, { statusCode: 400, message: 'Upload both front and back ID documents before submitting' });
+      }
+
+      user.set('kyc.idType', idType);
+      user.set('kyc.idNumber', typeof idNumber === 'string' ? idNumber.trim() : user.kyc?.idNumber || '');
+      user.set('kyc.frontDocument', nextFrontDocument);
+      user.set('kyc.backDocument', nextBackDocument);
+      user.set('kyc.status', 'pending');
+      user.set('kyc.rejectionReason', '');
+      user.set('kyc.submittedAt', new Date());
+      user.set('kyc.reviewedAt', undefined);
     }
 
     if (req.body.password) {

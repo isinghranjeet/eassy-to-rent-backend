@@ -772,7 +772,52 @@ const getAdminUsers = asyncHandler(async (req, res) => {
   });
 });
 
-const reviewOwnerKyc = asyncHandler(async (req, res) => {
+const getAdminKycSubmissions = asyncHandler(async (req, res) => {
+  const pageNum = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limitNum = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+  const skip = (pageNum - 1) * limitNum;
+  const query = {
+    role: { $in: ['owner', 'user'] },
+    'kyc.status': { $ne: 'verified' },
+    $and: [
+      {
+        $or: [
+          { 'kyc.frontDocument': { $exists: true, $ne: '' } },
+          { 'kycDetails.frontDocumentUrl': { $exists: true, $ne: '' } },
+        ],
+      },
+      {
+        $or: [
+          { 'kyc.backDocument': { $exists: true, $ne: '' } },
+          { 'kycDetails.backDocumentUrl': { $exists: true, $ne: '' } },
+        ],
+      },
+    ],
+  };
+
+  const [items, total] = await Promise.all([
+    User.find(query)
+      .select('_id name email role phone status createdAt kyc.idType kyc.idNumber kyc.status kyc.rejectionReason kyc.submittedAt kycDetails.idType')
+      .sort({ 'kyc.submittedAt': -1, updatedAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    User.countDocuments(query),
+  ]);
+
+  return successResponse(res, {
+    message: 'KYC submissions fetched successfully',
+    data: {
+      items,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pages: Math.ceil(total / limitNum),
+    },
+  });
+});
+
+const reviewUserKyc = asyncHandler(async (req, res) => {
   const { status, rejectionReason = '' } = req.body;
   if (!['verified', 'rejected'].includes(status)) {
     return errorResponse(res, {
@@ -791,7 +836,7 @@ const reviewOwnerKyc = asyncHandler(async (req, res) => {
   if (status === 'rejected' && !rejectionReason.trim()) {
     return errorResponse(res, {
       statusCode: 400,
-      message: 'Provide a reason when rejecting owner verification',
+      message: 'Provide a reason when rejecting identity verification',
     });
   }
 
@@ -799,8 +844,8 @@ const reviewOwnerKyc = asyncHandler(async (req, res) => {
   if (!user) {
     return errorResponse(res, { statusCode: 404, message: 'User not found' });
   }
-  if (user.role !== 'owner') {
-    return errorResponse(res, { statusCode: 400, message: 'Only owner accounts can be reviewed for KYC' });
+  if (!['owner', 'user'].includes(user.role)) {
+    return errorResponse(res, { statusCode: 400, message: 'Only tenant and owner accounts can be reviewed for KYC' });
   }
 
   const frontDocument = user.kyc?.frontDocument || user.kycDetails?.frontDocumentUrl || '';
@@ -821,7 +866,7 @@ const reviewOwnerKyc = asyncHandler(async (req, res) => {
   await user.save();
 
   return successResponse(res, {
-    message: `Owner KYC ${status}`,
+    message: `${user.role === 'owner' ? 'Owner' : 'Tenant'} KYC ${status}`,
     data: {
       _id: user._id,
       name: user.name,
@@ -1140,7 +1185,8 @@ module.exports = {
   getAdminDashboardStats,
   getAdminAnalytics,
   getAdminUsers,
-  reviewOwnerKyc,
+  getAdminKycSubmissions,
+  reviewUserKyc,
   getAuditLogs,
   getSystemHealth,
   getSystemErrors,

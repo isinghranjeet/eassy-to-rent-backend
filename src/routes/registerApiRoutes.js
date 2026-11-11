@@ -1,6 +1,7 @@
 function registerApiRoutes(app, routes) {
   const {
     pgRoutes,
+    propertyRoutes,
     authRoutes,
     bookingRoutes,
     reviewRoutes,
@@ -20,6 +21,7 @@ function registerApiRoutes(app, routes) {
   } = routes;
 
   app.use('/api/pg', pgRoutes);
+  if (propertyRoutes) app.use('/api/properties', propertyRoutes);
   app.use('/api/auth', authRoutes);
   app.use('/api/bookings', bookingRoutes);
   app.use('/api/reviews', reviewRoutes);

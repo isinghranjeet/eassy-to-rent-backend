@@ -1,4 +1,6 @@
 const PG = require('../models/PGListing');
+const Location = require('../models/Location');
+const { INACTIVE_AVAILABILITY_VALUES } = require('../utils/locationUtils');
 
 // Allowed location slugs as per your frontend
 const ALLOWED_LOCATION_SLUGS = new Set([
@@ -138,8 +140,69 @@ const getPropertyBySlug = async (req, res) => {
   }
 };
 
+// @route   GET /api/properties/location/:slug
+// @desc    List active properties assigned to a location landing page
+// @access  Public
+const getPropertiesByLocation = async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '').trim().toLowerCase();
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return res.status(400).json({ success: false, message: 'Invalid location slug' });
+    }
+
+    const page = Number(req.query.page || 1);
+    const limit = Number(req.query.limit || 12);
+    const sort = String(req.query.sort || 'price_asc');
+    const sortOptions = {
+      price_asc: { price: 1 },
+      price_desc: { price: -1 },
+      rating: { rating: -1, reviewCount: -1 },
+      newest: { createdAt: -1 },
+    };
+
+    if (!Number.isInteger(page) || page < 1 ||
+        !Number.isInteger(limit) || limit < 1 || limit > 100 ||
+        !sortOptions[sort]) {
+      return res.status(400).json({ success: false, message: 'Invalid pagination or sort options' });
+    }
+
+    const location = await Location.findOne({ slug }).select('_id').lean();
+    if (!location) {
+      return res.status(404).json({ success: false, message: 'Location not found' });
+    }
+
+    const query = {
+      locationSlug: slug,
+      published: true,
+      availability: { $nin: INACTIVE_AVAILABILITY_VALUES },
+    };
+    const [items, total] = await Promise.all([
+      PG.find(query)
+        .sort(sortOptions[sort])
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      PG.countDocuments(query),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        items,
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error('Get properties by location error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load properties for this location' });
+  }
+};
+
 module.exports = {
   getProperties,
+  getPropertiesByLocation,
   getPropertyBySlug,
 };
 

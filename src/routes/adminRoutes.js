@@ -11,7 +11,8 @@ const {
   getAdminDashboardStats,
   getAdminAnalytics,
   getAdminUsers,
-  reviewOwnerKyc,
+  getAdminKycSubmissions,
+  reviewUserKyc,
   getAuditLogs,
   getSystemHealth,
   getSystemErrors,
@@ -44,7 +45,8 @@ router.put('/notifications/read-all', markAllNotificationsRead);
 // USER MANAGEMENT
 // ============================
 router.get('/users', getAdminUsers);
-router.patch('/users/:id/kyc', reviewOwnerKyc);
+router.get('/kyc', getAdminKycSubmissions);
+router.patch('/users/:id/kyc', reviewUserKyc);
 router.get('/users/:id/activity', getUserActivity);
 router.get('/users/:id/stats', getUserStats);
 

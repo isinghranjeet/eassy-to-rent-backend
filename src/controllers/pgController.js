@@ -5,6 +5,10 @@ const Review = require('../models/Review');
 const logger = require('../utils/logger');
 const { successResponse, errorResponse } = require('../utils/response');
 const { uploadImage, uploadGalleryImages } = require('../utils/cloudinary');
+const {
+  ensureLocation,
+  syncLocationMetadata,
+} = require('../utils/locationUtils');
 
 // ✅ OPTIMIZED: Import cache service
 let cache;
@@ -139,8 +143,6 @@ limit = 20
       ];
     }
 
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
     // ✅ OPTIMIZED: Use lean() for better performance on read-only queries
@@ -359,7 +361,13 @@ exports.createPGListing = async (req, res, next) => {
       virtualTour: req.body.virtualTour || '',
     };
 
+    listingData.city = listingData.city || 'Chandigarh';
+    const { location } = await ensureLocation(listingData.locality, listingData.city);
+    listingData.locationSlug = location.slug;
+    listingData.locationId = location._id;
+
     const listing = await PGListing.create(listingData);
+    await syncLocationMetadata(location.slug);
 
     return successResponse(res, {
       statusCode: 201,
@@ -367,6 +375,10 @@ exports.createPGListing = async (req, res, next) => {
       data: listing,
     });
   } catch (error) {
+    if (error instanceof TypeError && error.message.startsWith('Location')) {
+      return errorResponse(res, { statusCode: 400, message: error.message });
+    }
+
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
       return errorResponse(res, {
@@ -400,6 +412,7 @@ exports.updatePGListing = async (req, res, next) => {
       });
     }
 
+    const previousLocationSlug = listing.locationSlug;
     const updatePayload = { ...req.body };
 
     if (req.body.videoUrl !== undefined) {
@@ -436,6 +449,11 @@ exports.updatePGListing = async (req, res, next) => {
       }
     }
 
+    const nextCity = updatePayload.city !== undefined ? updatePayload.city : listing.city;
+    const nextLocality = updatePayload.locality !== undefined ? updatePayload.locality : listing.locality;
+    const { location } = await ensureLocation(nextLocality, nextCity);
+    updatePayload.locationSlug = location.slug;
+    updatePayload.locationId = location._id;
     updatePayload.updatedAt = Date.now();
 
     listing = await PGListing.findByIdAndUpdate(
@@ -447,6 +465,11 @@ exports.updatePGListing = async (req, res, next) => {
       }
     );
 
+    if (previousLocationSlug && previousLocationSlug !== location.slug) {
+      await syncLocationMetadata(previousLocationSlug);
+    }
+    await syncLocationMetadata(location.slug);
+
     const responseData = listing.toObject();
     responseData.hasVirtualTour = !!(responseData.videoUrl || responseData.virtualTour);
     responseData.videoEmbedUrl = getYouTubeEmbedUrl(responseData.videoUrl);
@@ -457,6 +480,10 @@ exports.updatePGListing = async (req, res, next) => {
       data: responseData,
     });
   } catch (error) {
+    if (error instanceof TypeError && error.message.startsWith('Location')) {
+      return errorResponse(res, { statusCode: 400, message: error.message });
+    }
+
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(val => val.message);
       return errorResponse(res, {
@@ -490,7 +517,13 @@ exports.deletePGListing = async (req, res, next) => {
       });
     }
     
+    let locationSlug = listing.locationSlug;
+    if (!locationSlug) {
+      const { location } = await ensureLocation(listing.locality, listing.city);
+      locationSlug = location.slug;
+    }
     await listing.deleteOne();
+    if (locationSlug) await syncLocationMetadata(locationSlug);
     
     return successResponse(res, {
       message: 'PG listing deleted successfully',
@@ -531,10 +564,21 @@ exports.toggleStatus = async (req, res, next) => {
       });
     }
     
+    const previousLocationSlug = listing.locationSlug;
     listing[field] = !listing[field];
     listing.updatedAt = Date.now();
+
+    if (!listing.locationSlug) {
+      const { location } = await ensureLocation(listing.locality, listing.city);
+      listing.locationSlug = location.slug;
+      listing.locationId = location._id;
+    }
     
     await listing.save();
+    if (previousLocationSlug && previousLocationSlug !== listing.locationSlug) {
+      await syncLocationMetadata(previousLocationSlug);
+    }
+    await syncLocationMetadata(listing.locationSlug);
     
     return successResponse(res, {
       message: `${field} status updated`,

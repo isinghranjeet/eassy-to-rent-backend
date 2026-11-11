@@ -8,6 +8,7 @@ router.get('/', locationController.getLocations);
 router.get('/top', locationController.getTopLocations);
 router.get('/popular', locationController.getPopularLocations);
 router.get('/search', locationController.searchLocations);
+router.get('/sitemap-slugs', locationController.getSitemapSlugs);
 router.get('/city/:city', locationController.getPGsByCity);
 router.get('/:slug', locationController.getLocationBySlug);
 

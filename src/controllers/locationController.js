@@ -1,9 +1,11 @@
 // backend/src/controllers/locationController.js
 const PG = require('../models/PGListing');
+const Location = require('../models/Location');
 const {
   slugifyLocationName,
   locationPhraseFromSlug,
   buildLocationMatchQueryFromSlug,
+  INACTIVE_AVAILABILITY_VALUES,
 } = require('../utils/locationUtils');
 
 // @desc    Get all unique locations from PGs (DYNAMIC)
@@ -51,7 +53,33 @@ const getLocations = async (req, res) => {
 const getTopLocations = async (req, res) => {
   try {
     const { limit = 10 } = req.query;
-    const limitNum = Math.max(parseInt(limit || '10', 10), 1);
+    const parsedLimit = Number(limit);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+      return res.status(400).json({ success: false, message: 'Limit must be an integer from 1 to 100' });
+    }
+    const limitNum = parsedLimit;
+
+    const indexedLocations = await Location.find({
+      isIndexed: true,
+      totalActiveListings: { $gt: 0 },
+    })
+      .sort({ totalActiveListings: -1 })
+      .limit(limitNum)
+      .lean();
+
+    if (indexedLocations.length > 0) {
+      return res.json({
+        success: true,
+        data: indexedLocations.map((location) => ({
+          name: location.name,
+          city: location.city,
+          slug: location.slug,
+          propertyCount: location.totalActiveListings,
+          pgCount: location.totalActiveListings,
+          image: location.image,
+        })),
+      });
+    }
 
     // Debug logging
     const totalListingsCount = await PG.countDocuments({});
@@ -182,7 +210,32 @@ const getTopLocations = async (req, res) => {
 const getPopularLocations = async (req, res) => {
   try {
     const { limit = 8 } = req.query;
-    const limitNum = parseInt(limit);
+    const limitNum = Number(limit);
+    if (!Number.isInteger(limitNum) || limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({ success: false, message: 'Limit must be an integer from 1 to 100' });
+    }
+
+    const indexedLocations = await Location.find({
+      isIndexed: true,
+      totalActiveListings: { $gt: 0 },
+    })
+      .sort({ totalActiveListings: -1 })
+      .limit(limitNum)
+      .lean();
+
+    if (indexedLocations.length > 0) {
+      return res.json({
+        success: true,
+        data: indexedLocations.map((location) => ({
+          name: location.name,
+          city: location.city,
+          slug: location.slug,
+          pgCount: location.totalActiveListings,
+          propertyCount: location.totalActiveListings,
+          image: location.image,
+        })),
+      });
+    }
 
     const locations = await PG.aggregate([
       { $match: { published: true, city: { $ne: null, $exists: true, $ne: '' } } },
@@ -211,6 +264,29 @@ const getPopularLocations = async (req, res) => {
   } catch (error) {
     console.error('Get popular locations error:', error);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get active, indexable location slugs for the sitemap
+// @route   GET /api/locations/sitemap-slugs
+// @access  Public
+const getSitemapSlugs = async (req, res) => {
+  try {
+    const locations = await Location.find({
+      isIndexed: true,
+      totalActiveListings: { $gt: 0 },
+    })
+      .select('slug updatedAt')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: locations.map(({ slug, updatedAt }) => ({ slug, updatedAt })),
+    });
+  } catch (error) {
+    console.error('Get sitemap location slugs error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to load location sitemap data' });
   }
 };
 
@@ -253,20 +329,48 @@ const searchLocations = async (req, res) => {
 // @access  Public
 const getLocationBySlug = async (req, res) => {
   try {
-    const { slug } = req.params;
+    const slug = String(req.params.slug || '').trim().toLowerCase();
     const { page = 1, limit = 12, sort = "price_asc", type, minPrice, maxPrice } = req.query;
 
-    const locationName = locationPhraseFromSlug(slug);
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+      return res.status(400).json({ success: false, message: 'Invalid location slug' });
+    }
 
-    // Core fix: match the same fields used by /api/locations/top (locality preferred, city fallback),
-    // and be robust to inconsistent strings like "near <location>" etc.
-    let pgQuery = buildLocationMatchQueryFromSlug(slug);
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+    const min = minPrice === undefined ? undefined : Number(minPrice);
+    const max = maxPrice === undefined ? undefined : Number(maxPrice);
+    const allowedSorts = ['price_asc', 'price_desc', 'rating', 'newest'];
+
+    if (!Number.isInteger(pageNum) || pageNum < 1 ||
+        !Number.isInteger(limitNum) || limitNum < 1 || limitNum > 100 ||
+        !allowedSorts.includes(String(sort)) ||
+        (min !== undefined && (!Number.isFinite(min) || min < 0)) ||
+        (max !== undefined && (!Number.isFinite(max) || max < 0)) ||
+        (min !== undefined && max !== undefined && min > max)) {
+      return res.status(400).json({ success: false, message: 'Invalid location listing filters' });
+    }
+
+    const location = await Location.findOne({ slug }).lean();
+    const pgQuery = location
+      ? {
+          locationSlug: slug,
+          published: true,
+          availability: { $nin: INACTIVE_AVAILABILITY_VALUES },
+        }
+      : buildLocationMatchQueryFromSlug(slug);
     
-    if (type && type !== 'all') pgQuery.type = type;
-    if (minPrice || maxPrice) {
+    if (type && type !== 'all') {
+      const normalizedType = String(type).toLowerCase();
+      if (!['boys', 'girls', 'co-ed', 'family'].includes(normalizedType)) {
+        return res.status(400).json({ success: false, message: 'Invalid property type' });
+      }
+      pgQuery.type = normalizedType;
+    }
+    if (min !== undefined || max !== undefined) {
       pgQuery.price = {};
-      if (minPrice) pgQuery.price.$gte = parseInt(minPrice);
-      if (maxPrice) pgQuery.price.$lte = parseInt(maxPrice);
+      if (min !== undefined) pgQuery.price.$gte = min;
+      if (max !== undefined) pgQuery.price.$lte = max;
     }
     
     let pgSort = { price: 1 };
@@ -274,24 +378,33 @@ const getLocationBySlug = async (req, res) => {
     else if (sort === "rating") pgSort = { rating: -1 };
     else if (sort === "newest") pgSort = { createdAt: -1 };
     
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
-    
-    const pgs = await PG.find(pgQuery)
-      .sort(pgSort)
-      .limit(limitNum)
-      .skip(skip);
-    
-    const totalPGs = await PG.countDocuments(pgQuery);
-    
-    const firstPG = await PG.findOne(pgQuery);
-    const locationImage = firstPG?.images?.[0] || "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500";
-    
-    res.json({
+
+    const [pgs, totalPGs, firstPG] = await Promise.all([
+      PG.find(pgQuery).sort(pgSort).limit(limitNum).skip(skip).lean(),
+      PG.countDocuments(pgQuery),
+      PG.findOne(pgQuery).select('images').lean(),
+    ]);
+
+    const locationData = location || {
+      name: locationPhraseFromSlug(slug),
+      city: locationPhraseFromSlug(slug),
+      slug,
+      totalActiveListings: totalPGs,
+      pgCount: totalPGs,
+      averageRent: 0,
+      isIndexed: totalPGs > 0,
+    };
+
+    return res.json({
       success: true,
       data: {
-        location: { name: locationName, slug, pgCount: totalPGs, image: locationImage },
+        location: {
+          ...locationData,
+          pgCount: location?.totalActiveListings ?? totalPGs,
+          image: location?.image || firstPG?.images?.[0] ||
+            "https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=500",
+        },
         pgs,
         pagination: {
           currentPage: pageNum,
@@ -355,6 +468,7 @@ module.exports = {
   getTopLocations,
   getPopularLocations,
   searchLocations,
+  getSitemapSlugs,
   getLocationBySlug,
   getPGsByCity,
   filterPGsByLocation,
