@@ -823,7 +823,10 @@ function parseExistingImages(pgData, body) {
 function applyCoverPhoto(pgData, images, fallbackCoverPhoto = "") {
   const rawIndex = pgData.coverPhotoIndex;
   const coverIndex = Number.parseInt(rawIndex, 10);
-  if (
+  let coverPhoto = pgData.coverPhoto && images.includes(pgData.coverPhoto)
+    ? pgData.coverPhoto
+    : "";
+  if (!coverPhoto &&
     rawIndex !== undefined &&
     rawIndex !== null &&
     rawIndex !== "" &&
@@ -831,14 +834,17 @@ function applyCoverPhoto(pgData, images, fallbackCoverPhoto = "") {
     coverIndex >= 0 &&
     coverIndex < images.length
   ) {
-    pgData.coverPhoto = images[coverIndex];
-  } else if (pgData.coverPhoto && images.includes(pgData.coverPhoto)) {
-    // Keep an explicitly supplied cover URL when it remains in the image set.
-  } else if (fallbackCoverPhoto && images.includes(fallbackCoverPhoto)) {
-    pgData.coverPhoto = fallbackCoverPhoto;
-  } else {
-    pgData.coverPhoto = images[0] || "";
+    coverPhoto = images[coverIndex];
   }
+  if (!coverPhoto && fallbackCoverPhoto && images.includes(fallbackCoverPhoto)) {
+    coverPhoto = fallbackCoverPhoto;
+  }
+  if (!coverPhoto) coverPhoto = images[0] || "";
+
+  pgData.images = coverPhoto
+    ? [coverPhoto, ...images.filter((image) => image !== coverPhoto)]
+    : [];
+  pgData.coverPhoto = coverPhoto;
   delete pgData.coverPhotoIndex;
 }
 
