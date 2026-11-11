@@ -378,6 +378,7 @@ exports.getProfile = async (req, res, next) => {
         officeAddress: user.officeAddress,
         payoutDetails: user.payoutDetails,
         kycDetails: user.kycDetails,
+        kyc: user.kyc,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
         lastLoginIP: user.lastLoginIP,
@@ -438,6 +439,7 @@ exports.updateProfile = async (req, res, next) => {
       'officeAddress',
       'payoutDetails',
       'kycDetails',
+      'kyc',
     ].some((field) => req.body[field] !== undefined);
 
     if (hasOwnerProfileFields && user.role !== 'owner') {
@@ -512,8 +514,19 @@ exports.updateProfile = async (req, res, next) => {
         if (ifscCode !== undefined) user.set('payoutDetails.ifscCode', ifscCode.trim().toUpperCase());
       }
 
-      if (req.body.kycDetails !== undefined) {
-        const kycDetails = req.body.kycDetails;
+      const submittedKycDetails = req.body.kycDetails !== undefined
+        ? req.body.kycDetails
+        : req.body.kyc !== undefined
+          ? req.body.kyc && typeof req.body.kyc === 'object' && !Array.isArray(req.body.kyc)
+            ? {
+                idType: req.body.kyc.idType,
+                frontDocumentUrl: req.body.kyc.frontDocument,
+                backDocumentUrl: req.body.kyc.backDocument,
+              }
+            : req.body.kyc
+          : undefined;
+      if (submittedKycDetails !== undefined) {
+        const kycDetails = submittedKycDetails;
         if (!kycDetails || typeof kycDetails !== 'object' || Array.isArray(kycDetails)) {
           return errorResponse(res, { statusCode: 400, message: 'KYC details must be an object' });
         }
@@ -521,22 +534,47 @@ exports.updateProfile = async (req, res, next) => {
         const validIdTypes = ['Aadhaar', 'Government ID', 'Driving License'];
         const validDocumentReference = (value) => (
           typeof value === 'string' &&
-          value.length <= 4_300_000 &&
+          value.length <= 7_200_000 &&
           (value === '' || /^https:\/\//i.test(value) || /^data:(image\/[a-zA-Z0-9.+-]+|application\/pdf);base64,/i.test(value))
+        );
+        const previousFrontDocument = user.kyc?.frontDocument || user.kycDetails?.frontDocumentUrl || '';
+        const previousBackDocument = user.kyc?.backDocument || user.kycDetails?.backDocumentUrl || '';
+        const nextFrontDocument = frontDocumentUrl !== undefined ? frontDocumentUrl : previousFrontDocument;
+        const nextBackDocument = backDocumentUrl !== undefined ? backDocumentUrl : previousBackDocument;
+        const documentsChanged = (
+          (frontDocumentUrl !== undefined && frontDocumentUrl !== previousFrontDocument) ||
+          (backDocumentUrl !== undefined && backDocumentUrl !== previousBackDocument)
         );
 
         if (idType !== undefined && !validIdTypes.includes(idType)) {
           return errorResponse(res, { statusCode: 400, message: 'Please select a supported ID type' });
         }
         if (frontDocumentUrl !== undefined && !validDocumentReference(frontDocumentUrl)) {
-          return errorResponse(res, { statusCode: 400, message: 'Front ID document must be a supported image or PDF up to 3 MB' });
+          return errorResponse(res, { statusCode: 400, message: 'Front ID document must be a supported image or PDF up to 5 MB' });
         }
         if (backDocumentUrl !== undefined && !validDocumentReference(backDocumentUrl)) {
-          return errorResponse(res, { statusCode: 400, message: 'Back ID document must be a supported image or PDF up to 3 MB' });
+          return errorResponse(res, { statusCode: 400, message: 'Back ID document must be a supported image or PDF up to 5 MB' });
         }
-        if (idType !== undefined) user.set('kycDetails.idType', idType);
+        const effectiveIdType = idType !== undefined
+          ? idType
+          : user.kyc?.idType || user.kycDetails?.idType || 'Government ID';
+        user.set('kycDetails.idType', effectiveIdType);
+        user.set('kyc.idType', effectiveIdType);
         if (frontDocumentUrl !== undefined) user.set('kycDetails.frontDocumentUrl', frontDocumentUrl);
         if (backDocumentUrl !== undefined) user.set('kycDetails.backDocumentUrl', backDocumentUrl);
+        user.set('kyc.frontDocument', nextFrontDocument);
+        user.set('kyc.backDocument', nextBackDocument);
+
+        if (!nextFrontDocument || !nextBackDocument) {
+          user.set('kyc.status', 'unverified');
+          user.set('kyc.rejectionReason', '');
+          user.set('kyc.reviewedAt', undefined);
+        } else if (documentsChanged || user.kyc?.status === 'unverified') {
+          user.set('kyc.status', 'pending');
+          user.set('kyc.rejectionReason', '');
+          user.set('kyc.submittedAt', new Date());
+          user.set('kyc.reviewedAt', undefined);
+        }
       }
     }
 
@@ -569,6 +607,7 @@ exports.updateProfile = async (req, res, next) => {
         officeAddress: updatedUser.officeAddress,
         payoutDetails: updatedUser.payoutDetails,
         kycDetails: updatedUser.kycDetails,
+        kyc: updatedUser.kyc,
         token,
       },
     });

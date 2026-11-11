@@ -289,6 +289,40 @@ const PGListingSchema = new mongoose.Schema({
     default: '',
   },
 
+  // Generated when an admin approves or publishes a listing.
+  seo: {
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      unique: true,
+      sparse: true,
+    },
+    metaTitle: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    metaDescription: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    canonicalUrl: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    keywords: [{
+      type: String,
+      trim: true,
+    }],
+    schemaData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+  },
+
   // Google Maps location details
   geoAddress: {
     type: String,

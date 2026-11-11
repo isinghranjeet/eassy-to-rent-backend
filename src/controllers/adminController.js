@@ -12,6 +12,7 @@ const Activity = require('../models/Activity');
 const { successResponse, errorResponse } = require('../utils/response');
 const { asyncHandler } = require('../middleware/asyncHandler');
 const { sendOfferEmail } = require('../services/notificationService');
+const { fillMissingPGSeo } = require('../utils/pgSeo');
 
 // ============================
 // ACTIVITY SYSTEM
@@ -512,11 +513,7 @@ const updatePGStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  const pg = await PGListing.findByIdAndUpdate(
-    id,
-    { [field]: value, updatedAt: Date.now() },
-    { new: true, runValidators: true }
-  );
+  const pg = await PGListing.findById(id);
 
   if (!pg) {
     return errorResponse(res, {
@@ -524,6 +521,16 @@ const updatePGStatus = asyncHandler(async (req, res) => {
       message: 'PG listing not found'
     });
   }
+
+  pg[field] = value;
+  if (
+    (field === 'verified' && value === true) ||
+    (field === 'published' && value === true && pg.verified)
+  ) {
+    fillMissingPGSeo(pg);
+  }
+  pg.updatedAt = Date.now();
+  await pg.save();
 
   return successResponse(res, {
     message: `PG ${field} updated successfully`,
@@ -740,7 +747,7 @@ const getAdminUsers = asyncHandler(async (req, res) => {
       .sort({ [sortField]: sortDirection })
       .skip(skip)
       .limit(limitNum)
-      .select('-password -otp -otpExpires -resetPasswordToken -resetPasswordExpire')
+      .select('-password -otp -otpExpires -resetPasswordToken -resetPasswordExpire -kyc.frontDocument -kyc.backDocument -kycDetails.frontDocumentUrl -kycDetails.backDocumentUrl')
       .lean(),
     User.countDocuments(query)
   ]);
@@ -762,6 +769,69 @@ const getAdminUsers = asyncHandler(async (req, res) => {
       pages: Math.ceil(total / limitNum),
       items
     }
+  });
+});
+
+const reviewOwnerKyc = asyncHandler(async (req, res) => {
+  const { status, rejectionReason = '' } = req.body;
+  if (!['verified', 'rejected'].includes(status)) {
+    return errorResponse(res, {
+      statusCode: 400,
+      message: 'KYC review status must be verified or rejected',
+    });
+  }
+
+  if (typeof rejectionReason !== 'string' || rejectionReason.length > 500) {
+    return errorResponse(res, {
+      statusCode: 400,
+      message: 'Rejection reason must be 500 characters or fewer',
+    });
+  }
+
+  if (status === 'rejected' && !rejectionReason.trim()) {
+    return errorResponse(res, {
+      statusCode: 400,
+      message: 'Provide a reason when rejecting owner verification',
+    });
+  }
+
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    return errorResponse(res, { statusCode: 404, message: 'User not found' });
+  }
+  if (user.role !== 'owner') {
+    return errorResponse(res, { statusCode: 400, message: 'Only owner accounts can be reviewed for KYC' });
+  }
+
+  const frontDocument = user.kyc?.frontDocument || user.kycDetails?.frontDocumentUrl || '';
+  const backDocument = user.kyc?.backDocument || user.kycDetails?.backDocumentUrl || '';
+  if (!frontDocument || !backDocument) {
+    return errorResponse(res, {
+      statusCode: 400,
+      message: 'Both front and back identity documents are required before review',
+    });
+  }
+
+  user.set('kyc.idType', user.kyc?.idType || user.kycDetails?.idType || '');
+  user.set('kyc.frontDocument', frontDocument);
+  user.set('kyc.backDocument', backDocument);
+  user.set('kyc.status', status);
+  user.set('kyc.rejectionReason', status === 'rejected' ? rejectionReason.trim() : '');
+  user.set('kyc.reviewedAt', new Date());
+  await user.save();
+
+  return successResponse(res, {
+    message: `Owner KYC ${status}`,
+    data: {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.status,
+      phone: user.phone,
+      kyc: user.kyc,
+      kycDetails: user.kycDetails,
+    },
   });
 });
 
@@ -1070,6 +1140,7 @@ module.exports = {
   getAdminDashboardStats,
   getAdminAnalytics,
   getAdminUsers,
+  reviewOwnerKyc,
   getAuditLogs,
   getSystemHealth,
   getSystemErrors,
@@ -1081,4 +1152,3 @@ module.exports = {
   getAdminOwnActivity,
   sendAdminOfferEmail
 };
-

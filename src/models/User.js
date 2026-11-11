@@ -68,6 +68,20 @@ const userSchema = new mongoose.Schema({
     backDocumentUrl: { type: String, default: '' }
   },
 
+  kyc: {
+    idType: { type: String, default: '' },
+    frontDocument: { type: String, default: '' },
+    backDocument: { type: String, default: '' },
+    status: {
+      type: String,
+      enum: ['unverified', 'pending', 'verified', 'rejected'],
+      default: 'unverified'
+    },
+    rejectionReason: { type: String, default: '' },
+    submittedAt: { type: Date },
+    reviewedAt: { type: Date }
+  },
+
   role: {
     type: String,
     enum: ['user', 'admin', 'owner'],

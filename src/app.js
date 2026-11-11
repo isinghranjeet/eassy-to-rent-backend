@@ -102,14 +102,14 @@ applyCors(app);
 
 // Body parsing with limits
 app.use(express.json({
-  limit: '10mb',
+  limit: '15mb',
   verify: (req, res, buffer) => {
     if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/paymentgateway/webhook') {
       req.rawBody = Buffer.from(buffer);
     }
   },
 }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Data sanitization against NoSQL query injection
 app.use(mongoSanitize());
