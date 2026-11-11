@@ -4,6 +4,9 @@ const Review = require('../models/Review');
 const Wishlist = require('../models/Wishlist');
 const { successResponse, errorResponse } = require('../utils/response');
 
+const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d)[A-Za-z\d@$!%*?&#^()_+=\x5B\x5D{}|;:',.<>/?~`-]{6,}$/;
+const PASSWORD_ERROR = 'Password must be at least 6 characters and contain letters and numbers.';
+
 // @desc    Get full user profile
 // @route   GET /api/profile
 // @access  Private
@@ -153,12 +156,10 @@ exports.changePassword = async (req, res, next) => {
       });
     }
 
-    // Password validation
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passwordRegex.test(newPassword)) {
+    if (!PASSWORD_REGEX.test(newPassword)) {
       return errorResponse(res, {
         statusCode: 400,
-        message: 'Password must be at least 8 characters and contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+        message: PASSWORD_ERROR,
       });
     }
 
@@ -301,4 +302,3 @@ exports.deleteAccount = async (req, res, next) => {
     return next(error);
   }
 };
-

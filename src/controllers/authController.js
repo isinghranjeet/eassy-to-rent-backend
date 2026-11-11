@@ -7,6 +7,9 @@ const { sendLoginSuccessEmail } = require('../services/notificationService');
 const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 
+const PASSWORD_REGEX = /^(?=.*[a-zA-Z])(?=.*\d)[A-Za-z\d@$!%*?&#^()_+=\x5B\x5D{}|;:',.<>/?~`-]{6,}$/;
+const PASSWORD_ERROR = 'Password must be at least 6 characters and contain letters and numbers.';
+
 // Rate limiting store (use Redis in production)
 const loginAttempts = new Map();
 const otpRequests = new Map();
@@ -44,12 +47,10 @@ exports.register = async (req, res, next) => {
     const role = ['user', 'owner'].includes(req.body.role) ? req.body.role : 'user';
     const phone = typeof req.body.phone === 'string' ? req.body.phone.trim() : undefined;
 
-    // Enhanced password validation
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passwordRegex.test(rawPassword)) {
+    if (!PASSWORD_REGEX.test(rawPassword)) {
       return errorResponse(res, {
         statusCode: 400,
-        message: 'Password must be at least 8 characters and contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+        message: PASSWORD_ERROR,
       });
     }
 
@@ -370,6 +371,13 @@ exports.getProfile = async (req, res, next) => {
         phone: user.phone,
         status: user.status,
         profileImage: user.profileImage,
+        alternatePhone: user.alternatePhone,
+        whatsappNumber: user.whatsappNumber,
+        sameWhatsappAsPrimary: user.sameWhatsappAsPrimary,
+        businessName: user.businessName,
+        officeAddress: user.officeAddress,
+        payoutDetails: user.payoutDetails,
+        kycDetails: user.kycDetails,
         createdAt: user.createdAt,
         lastLogin: user.lastLogin,
         lastLoginIP: user.lastLoginIP,
@@ -422,12 +430,121 @@ exports.updateProfile = async (req, res, next) => {
     if (req.body.profileImage) user.profileImage = req.body.profileImage;
     if (req.body.bio) user.bio = req.body.bio;
 
+    const hasOwnerProfileFields = [
+      'alternatePhone',
+      'whatsappNumber',
+      'sameWhatsappAsPrimary',
+      'businessName',
+      'officeAddress',
+      'payoutDetails',
+      'kycDetails',
+    ].some((field) => req.body[field] !== undefined);
+
+    if (hasOwnerProfileFields && user.role !== 'owner') {
+      return errorResponse(res, {
+        statusCode: 403,
+        message: 'Only property owners can update owner profile details',
+      });
+    }
+
+    if (hasOwnerProfileFields) {
+      const { alternatePhone, whatsappNumber, sameWhatsappAsPrimary, businessName, officeAddress } = req.body;
+      const phonePattern = /^[6-9]\d{9}$/;
+
+      if (alternatePhone !== undefined) {
+        if (typeof alternatePhone !== 'string' || (alternatePhone && !phonePattern.test(alternatePhone))) {
+          return errorResponse(res, { statusCode: 400, message: 'Please provide a valid alternate phone number' });
+        }
+        user.alternatePhone = alternatePhone;
+      }
+
+      if (whatsappNumber !== undefined) {
+        if (typeof whatsappNumber !== 'string' || (whatsappNumber && !phonePattern.test(whatsappNumber))) {
+          return errorResponse(res, { statusCode: 400, message: 'Please provide a valid WhatsApp number' });
+        }
+        user.whatsappNumber = whatsappNumber;
+      }
+
+      if (sameWhatsappAsPrimary !== undefined) {
+        if (typeof sameWhatsappAsPrimary !== 'boolean') {
+          return errorResponse(res, { statusCode: 400, message: 'sameWhatsappAsPrimary must be a boolean' });
+        }
+        user.sameWhatsappAsPrimary = sameWhatsappAsPrimary;
+      }
+
+      if (businessName !== undefined) {
+        if (typeof businessName !== 'string' || businessName.length > 200) {
+          return errorResponse(res, { statusCode: 400, message: 'Business name must be 200 characters or fewer' });
+        }
+        user.businessName = businessName.trim();
+      }
+
+      if (officeAddress !== undefined) {
+        if (typeof officeAddress !== 'string' || officeAddress.length > 500) {
+          return errorResponse(res, { statusCode: 400, message: 'Office address must be 500 characters or fewer' });
+        }
+        user.officeAddress = officeAddress.trim();
+      }
+
+      if (req.body.payoutDetails !== undefined) {
+        const payoutDetails = req.body.payoutDetails;
+        if (!payoutDetails || typeof payoutDetails !== 'object' || Array.isArray(payoutDetails)) {
+          return errorResponse(res, { statusCode: 400, message: 'Payout details must be an object' });
+        }
+        const { upiId, accountHolderName, bankAccountNumber, ifscCode } = payoutDetails;
+        if (upiId !== undefined && (typeof upiId !== 'string' || upiId.length > 320)) {
+          return errorResponse(res, { statusCode: 400, message: 'Please provide a valid UPI ID' });
+        }
+        if (accountHolderName !== undefined && (typeof accountHolderName !== 'string' || accountHolderName.length > 200)) {
+          return errorResponse(res, { statusCode: 400, message: 'Account holder name must be 200 characters or fewer' });
+        }
+        if (bankAccountNumber !== undefined && (typeof bankAccountNumber !== 'string' || !/^\d{0,18}$/.test(bankAccountNumber))) {
+          return errorResponse(res, { statusCode: 400, message: 'Please provide a valid bank account number' });
+        }
+        if (ifscCode !== undefined && (typeof ifscCode !== 'string' || (ifscCode && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode.toUpperCase())))) {
+          return errorResponse(res, { statusCode: 400, message: 'Please provide a valid IFSC code' });
+        }
+        if (upiId !== undefined) user.set('payoutDetails.upiId', upiId.trim());
+        if (accountHolderName !== undefined) {
+          user.set('payoutDetails.accountHolderName', accountHolderName.trim());
+        }
+        if (bankAccountNumber !== undefined) user.set('payoutDetails.bankAccountNumber', bankAccountNumber);
+        if (ifscCode !== undefined) user.set('payoutDetails.ifscCode', ifscCode.trim().toUpperCase());
+      }
+
+      if (req.body.kycDetails !== undefined) {
+        const kycDetails = req.body.kycDetails;
+        if (!kycDetails || typeof kycDetails !== 'object' || Array.isArray(kycDetails)) {
+          return errorResponse(res, { statusCode: 400, message: 'KYC details must be an object' });
+        }
+        const { idType, frontDocumentUrl, backDocumentUrl } = kycDetails;
+        const validIdTypes = ['Aadhaar', 'Government ID', 'Driving License'];
+        const validDocumentReference = (value) => (
+          typeof value === 'string' &&
+          value.length <= 4_300_000 &&
+          (value === '' || /^https:\/\//i.test(value) || /^data:(image\/[a-zA-Z0-9.+-]+|application\/pdf);base64,/i.test(value))
+        );
+
+        if (idType !== undefined && !validIdTypes.includes(idType)) {
+          return errorResponse(res, { statusCode: 400, message: 'Please select a supported ID type' });
+        }
+        if (frontDocumentUrl !== undefined && !validDocumentReference(frontDocumentUrl)) {
+          return errorResponse(res, { statusCode: 400, message: 'Front ID document must be a supported image or PDF up to 3 MB' });
+        }
+        if (backDocumentUrl !== undefined && !validDocumentReference(backDocumentUrl)) {
+          return errorResponse(res, { statusCode: 400, message: 'Back ID document must be a supported image or PDF up to 3 MB' });
+        }
+        if (idType !== undefined) user.set('kycDetails.idType', idType);
+        if (frontDocumentUrl !== undefined) user.set('kycDetails.frontDocumentUrl', frontDocumentUrl);
+        if (backDocumentUrl !== undefined) user.set('kycDetails.backDocumentUrl', backDocumentUrl);
+      }
+    }
+
     if (req.body.password) {
-      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-      if (!passwordRegex.test(req.body.password)) {
+      if (!PASSWORD_REGEX.test(req.body.password)) {
         return errorResponse(res, {
           statusCode: 400,
-          message: 'Password must be at least 8 characters and contain uppercase, lowercase, number, and special character',
+          message: PASSWORD_ERROR,
         });
       }
       user.password = req.body.password;
@@ -445,6 +562,13 @@ exports.updateProfile = async (req, res, next) => {
         role: updatedUser.role,
         phone: updatedUser.phone,
         profileImage: updatedUser.profileImage,
+        alternatePhone: updatedUser.alternatePhone,
+        whatsappNumber: updatedUser.whatsappNumber,
+        sameWhatsappAsPrimary: updatedUser.sameWhatsappAsPrimary,
+        businessName: updatedUser.businessName,
+        officeAddress: updatedUser.officeAddress,
+        payoutDetails: updatedUser.payoutDetails,
+        kycDetails: updatedUser.kycDetails,
         token,
       },
     });
@@ -879,11 +1003,10 @@ exports.resetPassword = async (req, res, next) => {
       return errorResponse(res, { statusCode: 400, message: 'Please provide email, OTP, and new password' });
     }
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-    if (!passwordRegex.test(newPassword)) {
+    if (!PASSWORD_REGEX.test(newPassword)) {
       return errorResponse(res, {
         statusCode: 400,
-        message: 'Password must be at least 8 characters and contain uppercase, lowercase, number, and special character',
+        message: PASSWORD_ERROR,
       });
     }
 

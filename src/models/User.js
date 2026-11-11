@@ -26,6 +26,48 @@ const userSchema = new mongoose.Schema({
     default: ''
   },
 
+  alternatePhone: {
+    type: String,
+    default: ''
+  },
+
+  whatsappNumber: {
+    type: String,
+    default: ''
+  },
+
+  sameWhatsappAsPrimary: {
+    type: Boolean,
+    default: true
+  },
+
+  businessName: {
+    type: String,
+    default: ''
+  },
+
+  officeAddress: {
+    type: String,
+    default: ''
+  },
+
+  payoutDetails: {
+    upiId: { type: String, default: '' },
+    accountHolderName: { type: String, default: '' },
+    bankAccountNumber: { type: String, default: '' },
+    ifscCode: { type: String, default: '' }
+  },
+
+  kycDetails: {
+    idType: {
+      type: String,
+      enum: ['Aadhaar', 'Government ID', 'Driving License'],
+      default: 'Government ID'
+    },
+    frontDocumentUrl: { type: String, default: '' },
+    backDocumentUrl: { type: String, default: '' }
+  },
+
   role: {
     type: String,
     enum: ['user', 'admin', 'owner'],
