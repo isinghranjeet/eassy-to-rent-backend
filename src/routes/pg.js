@@ -820,6 +820,28 @@ function parseExistingImages(pgData, body) {
   }
 }
 
+function applyCoverPhoto(pgData, images, fallbackCoverPhoto = "") {
+  const rawIndex = pgData.coverPhotoIndex;
+  const coverIndex = Number.parseInt(rawIndex, 10);
+  if (
+    rawIndex !== undefined &&
+    rawIndex !== null &&
+    rawIndex !== "" &&
+    Number.isInteger(coverIndex) &&
+    coverIndex >= 0 &&
+    coverIndex < images.length
+  ) {
+    pgData.coverPhoto = images[coverIndex];
+  } else if (pgData.coverPhoto && images.includes(pgData.coverPhoto)) {
+    // Keep an explicitly supplied cover URL when it remains in the image set.
+  } else if (fallbackCoverPhoto && images.includes(fallbackCoverPhoto)) {
+    pgData.coverPhoto = fallbackCoverPhoto;
+  } else {
+    pgData.coverPhoto = images[0] || "";
+  }
+  delete pgData.coverPhotoIndex;
+}
+
 // Helper: upload files from multer to Cloudinary
 async function uploadFiles(files, folder) {
   const urls = [];
@@ -910,6 +932,7 @@ router.post(
       // Merge uploaded images with any URLs provided in body
       pgData.images = [...(pgData.images || []), ...images];
       pgData.gallery = [...(pgData.gallery || []), ...gallery];
+      applyCoverPhoto(pgData, pgData.images);
 
       // Generate slug from name if not provided
       if (pgData.name && !pgData.slug) {
@@ -1072,6 +1095,7 @@ router.put(
       // Merge uploaded images with existing/provided URLs
       pgData.images = [...(pgData.images || []), ...images];
       pgData.gallery = [...(pgData.gallery || []), ...gallery];
+      applyCoverPhoto(pgData, pgData.images, listing.coverPhoto);
 
       // Update slug if name changed
       if (pgData.name && pgData.name !== listing.name) {
