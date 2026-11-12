@@ -22,6 +22,7 @@ const {
   getAdminOwnActivity,
   getUserActivity,
   getUserStats,
+  getUserBookings,
   sendAdminOfferEmail
 } = require('../controllers/adminController');
 
@@ -49,6 +50,7 @@ router.get('/kyc', getAdminKycSubmissions);
 router.patch('/users/:id/kyc', reviewUserKyc);
 router.get('/users/:id/activity', getUserActivity);
 router.get('/users/:id/stats', getUserStats);
+router.get('/users/:id/bookings', getUserBookings);
 
 // ============================
 // PG MANAGEMENT

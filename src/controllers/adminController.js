@@ -962,6 +962,33 @@ const getUserStats = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get bookings for a user, including the related property
+ * @route   GET /api/admin/users/:id/bookings
+ * @access  Private/Admin
+ */
+const getUserBookings = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return errorResponse(res, { statusCode: 400, message: 'Invalid user ID' });
+  }
+
+  const userExists = await User.exists({ _id: id });
+  if (!userExists) {
+    return errorResponse(res, { statusCode: 404, message: 'User not found' });
+  }
+
+  const bookings = await Booking.find({ userId: id })
+    .populate('pgId', 'name city slug price images')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return successResponse(res, {
+    message: 'User bookings fetched successfully',
+    data: bookings,
+  });
+});
+
 // ============================
 // ADMIN PROFILE MANAGEMENT
 // ============================
@@ -1192,6 +1219,7 @@ module.exports = {
   getSystemErrors,
   getUserActivity,
   getUserStats,
+  getUserBookings,
   getAdminProfile,
   updateAdminProfile,
   updateAdminPassword,

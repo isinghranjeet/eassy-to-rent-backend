@@ -110,51 +110,44 @@ const verifyUPIPayment = asyncHandler(async (req, res) => {
     const { transactionId } = req.body;
     const userId = req.user._id;
 
+    if (typeof transactionId !== 'string' || !transactionId.trim()) {
+      throw new AppError('A valid transaction ID is required', 400);
+    }
+
     const credit = await CallCredit.findOne({ userId });
     if (!credit || !credit.pendingTransactions) {
       throw new AppError('Transaction not found', 404);
     }
     
-    const transaction = credit.pendingTransactions.find(t => t.transactionId === transactionId);
+    const transaction = credit.pendingTransactions.find(
+      (pending) => pending.transactionId === transactionId.trim()
+    );
     if (!transaction) {
       throw new AppError('Transaction not found', 404);
     }
     
     if (transaction.status === 'completed') {
-      return successResponse(res, { message: 'Already verified', data: { balance: credit.balance } });
-    }
-    
-    transaction.status = 'completed';
-    transaction.completedAt = new Date();
-    
-    credit.balance += 4;
-    credit.totalPurchased += 4;
-    credit.transactions.push({
-      amount: transaction.amount,
-      type: 'purchase',
-      cost: transaction.amount,
-      paymentMethod: 'UPI',
-      date: new Date()
-    });
-    credit.updatedAt = new Date();
-    
-    await credit.save();
-    
-    // Log activity
-    try {
-      await Activity.create({
-        type: 'PAYMENT_SUCCESS',
-        message: `Payment of ₹${transaction.amount} verified successfully`,
-        userId,
-        metadata: { transactionId, amount: transaction.amount, method: 'UPI' },
+      return successResponse(res, {
+        message: 'Payment has already been verified',
+        data: {
+          transactionId: transaction.transactionId,
+          status: transaction.status,
+          balance: credit.balance,
+        },
       });
-    } catch (activityErr) {
-      console.error('Activity log error:', activityErr.message);
+    }
+
+    if (transaction.status !== 'pending') {
+      throw new AppError('This transaction cannot be verified in its current state', 409);
     }
 
     return successResponse(res, {
-      message: 'Payment verified! Credits added.',
-      data: { balance: credit.balance },
+      message: 'Payment is pending verification',
+      data: {
+        transactionId: transaction.transactionId,
+        status: transaction.status,
+        balance: credit.balance,
+      },
     });
   });
 

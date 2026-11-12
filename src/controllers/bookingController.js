@@ -322,7 +322,9 @@ const getAllBookings = asyncHandler(async (req, res) => {
   } else if (req.user.role === 'owner') {
     // Compute owner's PG ids ONCE and reuse for both the find and the count
     // (previously this ran PGListing.find twice for the same data).
-    const ownerPgs = await PGListing.find({ owner: req.user._id }).select('_id').lean();
+    const ownerPgs = await PGListing.find({
+      ownerId: req.user._id.toString(),
+    }).select('_id').lean();
     const pgIds = ownerPgs.map((pg) => pg._id);
     query.pgId = { $in: pgIds };
   } else {
@@ -362,8 +364,10 @@ const updateBookingStatus = asyncHandler(async (req, res) => {
   if (!booking) throw new AppError('Booking not found', 404);
 
   if (req.user.role === 'owner') {
-    const pg = await PGListing.findById(booking.pgId).select('owner').lean();
-    if (!pg || pg.owner.toString() !== req.user._id.toString()) throw new AppError('Not authorized', 403);
+    const pg = await PGListing.findById(booking.pgId).select('ownerId').lean();
+    if (!pg || pg.ownerId !== req.user._id.toString()) {
+      throw new AppError('Not authorized', 403);
+    }
   } else if (req.user.role !== 'admin') {
     throw new AppError('Not authorized', 403);
   }

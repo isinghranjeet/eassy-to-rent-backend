@@ -1157,8 +1157,34 @@ exports.resetPassword = async (req, res, next) => {
 // @access  Private
 exports.logout = async (req, res, next) => {
   try {
+    const result = await User.updateOne(
+      { _id: req.user._id },
+      { $set: { refreshToken: null, updatedAt: new Date() } }
+    );
+    if (!result.matchedCount) {
+      return errorResponse(res, { statusCode: 404, message: 'User not found' });
+    }
+
     return successResponse(res, {
       message: 'Logged out successfully',
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+exports.logoutAll = async (req, res, next) => {
+  try {
+    const result = await User.updateOne(
+      { _id: req.user._id },
+      { $set: { refreshToken: null, updatedAt: new Date() } }
+    );
+    if (!result.matchedCount) {
+      return errorResponse(res, { statusCode: 404, message: 'User not found' });
+    }
+
+    return successResponse(res, {
+      message: 'Stored refresh sessions revoked. Existing access tokens expire automatically.',
     });
   } catch (error) {
     return next(error);
@@ -1262,6 +1288,40 @@ exports.googleTokenLogin = async (req, res, next) => {
       statusCode: 500,
       message: 'Google login failed: ' + error.message
     });
+  }
+};
+
+exports.googleLogin = async (req, res, next) => {
+  const { credential, code } = req.body || {};
+  if (typeof credential === 'string' && credential.trim()) {
+    return exports.googleTokenLogin(req, res, next);
+  }
+  if (typeof code !== 'string' || !code.trim()) {
+    return errorResponse(res, { statusCode: 400, message: 'A Google credential or authorization code is required' });
+  }
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !clientSecret || !redirectUri) {
+    return errorResponse(res, {
+      statusCode: 503,
+      message: 'Google authorization-code exchange is not configured',
+    });
+  }
+
+  try {
+    const client = new OAuth2Client(clientId, clientSecret, redirectUri);
+    const { tokens } = await client.getToken({ code: code.trim(), redirect_uri: redirectUri });
+    if (!tokens.id_token) {
+      return errorResponse(res, { statusCode: 401, message: 'Google did not return a valid identity token' });
+    }
+
+    req.body = { credential: tokens.id_token };
+    return exports.googleTokenLogin(req, res, next);
+  } catch (error) {
+    console.error('Google authorization-code exchange failed:', error.message);
+    return errorResponse(res, { statusCode: 401, message: 'Google authorization code is invalid or expired' });
   }
 };
 

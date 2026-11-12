@@ -1,6 +1,6 @@
 // backend/src/routes/index.js
 import express from 'express';
-import authRoutes from './authRoutes.js';
+import authRoutes from './auth.js';
 import pgRoutes from './pgRoutes.js';
 import bookingRoutes from './bookingRoutes.js';
 import paymentRoutes from './paymentRoutes.js';
@@ -8,10 +8,8 @@ import recommendationRoutes from './recommendationRoutes.js';
 import reviewRoutes from './reviews.js';
 import userRoutes from './userRoutes.js';
 import locationRoutes from './locationRoutes.js';
-import locationsRoutes from './locationsRoutes.js';
 import wishlistRoutes from './wishlistRoutes.js';
 import priceAlertRoutes from './priceAlertRoutes.js';
-import propertyRoutes from './propertyRoutes.js';
 
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -22,9 +20,6 @@ const router = express.Router();
 router.use('/auth', authRoutes);
 router.use('/pg', pgRoutes);
 router.use('/locations', locationRoutes);
-router.use('/locations', locationsRoutes);
-
-router.use('/properties', propertyRoutes);
 
 
 // Protected routes (require authentication)
