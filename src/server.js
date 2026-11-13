@@ -33,6 +33,7 @@ const connectDB = async () => {
       retryReads: true,
       maxPoolSize: 10,
       minPoolSize: 2,
+      bufferCommands: true, // ✅ FIX: Allows commands to buffer until connection is fully established (prevents cold start 500 crashes)
     };
 
     await mongoose.connect(MONGO_URI, connOptions);
@@ -60,7 +61,6 @@ const connectDB = async () => {
 let isShuttingDown = false;
 
 const gracefulShutdown = async (signal) => {
-  // Prevent multiple shutdown attempts
   if (isShuttingDown) {
     logger.warn(`⚠️ ${signal} received but shutdown already in progress`);
     return;
@@ -69,19 +69,16 @@ const gracefulShutdown = async (signal) => {
   isShuttingDown = true;
   logger.info(`📥 ${signal} received - Starting graceful shutdown...`);
   
-  // Set timeout for force shutdown
   const forceShutdownTimeout = setTimeout(() => {
     logger.error('❌ Force shutdown timeout reached - exiting immediately');
     process.exit(1);
-  }, 30000); // 30 seconds max
+  }, 30000);
   
   try {
-    // Close HTTP server first
     logger.info('🛑 Closing HTTP server...');
     await closeServer();
     logger.info('✅ HTTP server closed successfully');
     
-    // Close MongoDB connection
     if (mongoose.connection && mongoose.connection.readyState === 1) {
       logger.info('🛑 Closing MongoDB connection...');
       await mongoose.connection.close();
@@ -90,9 +87,7 @@ const gracefulShutdown = async (signal) => {
       logger.info('No active MongoDB connection to close');
     }
     
-    // Clear force shutdown timeout
     clearTimeout(forceShutdownTimeout);
-    
     logger.info('✅ Graceful shutdown completed successfully');
     process.exit(0);
     
@@ -116,12 +111,9 @@ const handleUnexpectedError = async (error, type) => {
     stack: error.stack,
     name: error.name
   });
-  
-  // Attempt graceful shutdown
   await gracefulShutdown(type);
 };
 
-// Global error handlers
 process.on('uncaughtException', (error) => {
   handleUnexpectedError(error, 'UNCAUGHT_EXCEPTION');
 });
@@ -130,11 +122,9 @@ process.on('unhandledRejection', (error) => {
   handleUnexpectedError(error, 'UNHANDLED_REJECTION');
 });
 
-// Process signals
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Handle cleanup on exit
 process.on('exit', (code) => {
   logger.info(`Process exiting with code: ${code}`);
 });
@@ -148,7 +138,6 @@ const bootstrap = async () => {
   logger.info(`🔧 Environment: ${NODE_ENV}`);
   logger.info(`🌍 Port: ${PORT}`);
   
-  // Connect to Database
   const dbConnected = await connectDB();
   
   if (!dbConnected) {
@@ -156,11 +145,9 @@ const bootstrap = async () => {
     process.exit(1);
   }
   
-  // Start HTTP Server
   try {
     const server = startServer(PORT);
     
-    // Handle server errors
     server.on('error', (err) => {
       logger.error('❌ Server error:', err);
       if (err.code === 'EADDRINUSE') {
@@ -172,10 +159,8 @@ const bootstrap = async () => {
     logger.info('🚀 Server startup complete');
     logger.info(`📡 API available at: http://localhost:${PORT}`);
     
-    // Start background jobs
     startBlogScheduler();
     
-    // Log startup success with timestamp
     logger.info(`✅ Application started successfully at ${new Date().toISOString()}`);
     
   } catch (err) {
@@ -193,18 +178,17 @@ bootstrap().catch((err) => {
 });
 
 // ======================
-// HEALTH MONITORING (Optional)
+// HEALTH MONITORING
 // ======================
 if (NODE_ENV === 'production') {
-  // Monitor memory usage
   setInterval(() => {
     const memoryUsage = process.memoryUsage();
-    if (memoryUsage.heapUsed > 500 * 1024 * 1024) { // 500MB
+    if (memoryUsage.heapUsed > 500 * 1024 * 1024) {
       logger.warn('⚠️ High memory usage detected', {
         heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
         heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
         rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`
       });
     }
-  }, 60000); // Check every minute
+  }, 60000);
 }
