@@ -1,23 +1,27 @@
 const Joi = require('joi');
 
 const objectId = Joi.string().pattern(/^[0-9a-fA-F]{24}$/);
+const objectIdOrName = Joi.alternatives().try(
+  objectId,
+  Joi.string().trim().min(1).max(100)
+);
 
 // ──────────────────────────────────────────────
 // Blog Category Validation
 // ──────────────────────────────────────────────
 const createCategorySchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
-  slug: Joi.string().trim().lowercase().pattern(/^[a-z0-9-]+$/).optional(),
+  slug: Joi.string().trim().lowercase().allow('').optional(),
   description: Joi.string().trim().max(500).allow('').default(''),
-  color: Joi.string().pattern(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/).default('#6366F1'),
+  color: Joi.string().allow('').default('#6366F1'),
   icon: Joi.string().allow('').default(''),
-  image: Joi.string().uri().allow('').default(''),
-  parent: Joi.string().allow(null).default(null),
+  image: Joi.string().allow('').default(''),
+  parent: Joi.string().allow('', null).default(null),
   order: Joi.number().integer().min(0).default(0),
   isActive: Joi.boolean().default(true),
   seoTitle: Joi.string().trim().max(70).allow('').default(''),
   metaDescription: Joi.string().trim().max(160).allow('').default(''),
-});
+}).options({ stripUnknown: true });
 
 const updateCategorySchema = createCategorySchema.fork(
   ['name'],
@@ -29,9 +33,9 @@ const updateCategorySchema = createCategorySchema.fork(
 // ──────────────────────────────────────────────
 const createTagSchema = Joi.object({
   name: Joi.string().trim().min(1).max(50).required(),
-  slug: Joi.string().trim().lowercase().pattern(/^[a-z0-9-]+$/).optional(),
-  color: Joi.string().pattern(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/).default('#8B5CF6'),
-});
+  slug: Joi.string().trim().lowercase().allow('').optional(),
+  color: Joi.string().allow('').default('#8B5CF6'),
+}).options({ stripUnknown: true });
 
 const updateTagSchema = createTagSchema.fork(
   ['name'],
@@ -55,10 +59,10 @@ const mergeTagsSchema = Joi.object({
 // ──────────────────────────────────────────────
 const createAuthorSchema = Joi.object({
   name: Joi.string().trim().min(1).max(100).required(),
-  slug: Joi.string().trim().lowercase().pattern(/^[a-z0-9-]+$/).optional(),
+  slug: Joi.string().trim().lowercase().allow('').optional(),
   email: Joi.string().email().allow('').default(''),
   bio: Joi.string().trim().max(500).allow('').default(''),
-  avatar: Joi.string().uri().allow('').default(''),
+  avatar: Joi.string().allow('').default(''),
   socialLinks: Joi.array().items(
     Joi.object({
       platform: Joi.string().valid('website', 'twitter', 'linkedin', 'facebook', 'instagram', 'youtube').required(),
@@ -67,7 +71,7 @@ const createAuthorSchema = Joi.object({
   ).default([]),
   role: Joi.string().valid('admin', 'guest', 'contributor').default('admin'),
   isActive: Joi.boolean().default(true),
-});
+}).options({ stripUnknown: true });
 
 const updateAuthorSchema = createAuthorSchema.fork(
   ['name'],
@@ -79,8 +83,9 @@ const updateAuthorSchema = createAuthorSchema.fork(
 // ──────────────────────────────────────────────
 const createBlogSchema = Joi.object({
   title: Joi.string().trim().min(1).max(200).required(),
-  slug: Joi.string().trim().lowercase().pattern(/^[a-z0-9-]+$/).optional(),
+  slug: Joi.string().trim().lowercase().allow('').optional(),
   shortDescription: Joi.string().trim().min(1).max(300).required(),
+  excerpt: Joi.string().trim().max(500).allow('').optional(),
   content: Joi.string().min(1).required(),
 
   // Media
@@ -97,15 +102,15 @@ const createBlogSchema = Joi.object({
     })
   ).default([]),
 
-// Classification
-  category: objectId.required(),
-  tags: Joi.array().items(objectId).default([]),
-  authorRef: objectId.allow('', null).default(null),
+  // Classification
+  category: objectIdOrName.required(),
+  tags: Joi.array().items(objectIdOrName).default([]),
+  authorRef: objectIdOrName.allow('', null).default(null),
 
   // Status
   status: Joi.string().valid('draft', 'published', 'scheduled', 'archived').default('draft'),
-  publishDate: Joi.date().allow(null).default(null),
-  scheduledDate: Joi.date().allow(null).default(null),
+  publishDate: Joi.date().allow('', null).default(null),
+  scheduledDate: Joi.date().allow('', null).default(null),
   featured: Joi.boolean().default(false),
 
   // Relations
@@ -125,14 +130,13 @@ const createBlogSchema = Joi.object({
   seoTitle: Joi.string().trim().max(70).allow('').default(''),
   metaDescription: Joi.string().trim().max(160).allow('').default(''),
   metaKeywords: Joi.array().items(Joi.string()).default([]),
-  canonicalUrl: Joi.string().uri().allow('').default(''),
+  canonicalUrl: Joi.string().allow('').default(''),
   focusKeyword: Joi.string().trim().allow('').default(''),
   schemaMarkup: Joi.object().allow(null).default(null),
-  openGraphImage: Joi.string().uri().allow('').default(''),
-  twitterImage: Joi.string().uri().allow('').default(''),
+  openGraphImage: Joi.string().allow('').default(''),
+  twitterImage: Joi.string().allow('').default(''),
   noindex: Joi.boolean().default(false),
-}).custom((value, helpers) => {
-  // Validate scheduled date
+}).options({ stripUnknown: true }).custom((value, helpers) => {
   if (value.status === 'scheduled') {
     if (!value.scheduledDate) {
       return helpers.error('any.custom', {
@@ -146,7 +150,6 @@ const createBlogSchema = Joi.object({
     }
   }
 
-  // Auto-set publishDate if status is published
   if (value.status === 'published' && !value.publishDate) {
     value.publishDate = new Date();
   }
@@ -159,21 +162,21 @@ const updateBlogSchema = createBlogSchema.fork(
   (schema) => schema.optional()
 ).keys({
   featuredImage: Joi.string().uri().allow('').optional(),
-  category: objectId.allow('', null).optional(),
-});
+  category: objectIdOrName.allow('', null).optional(),
+}).options({ stripUnknown: true });
 
 // ──────────────────────────────────────────────
 // Blog Status Update Validation
 // ──────────────────────────────────────────────
 const updateBlogStatusSchema = Joi.object({
   status: Joi.string().valid('draft', 'published', 'scheduled', 'archived').required(),
-  scheduledDate: Joi.date().allow(null).when('status', {
+  scheduledDate: Joi.date().allow('', null).when('status', {
     is: 'scheduled',
     then: Joi.date().greater('now').required().messages({
       'date.greater': 'Scheduled date must be in the future',
     }),
   }),
-});
+}).options({ stripUnknown: true });
 
 // ──────────────────────────────────────────────
 // Media Upload Validation
@@ -182,7 +185,7 @@ const mediaUploadSchema = Joi.object({
   alt: Joi.string().trim().max(200).allow('').default(''),
   caption: Joi.string().trim().max(500).allow('').default(''),
   folder: Joi.string().trim().default('blog'),
-});
+}).options({ stripUnknown: true });
 
 // ──────────────────────────────────────────────
 // Reading Tracking Validation
@@ -191,7 +194,7 @@ const trackReadingSchema = Joi.object({
   scrollDepth: Joi.number().min(0).max(100).required(),
   timeSpent: Joi.number().min(0).required(),
   source: Joi.string().valid('direct', 'organic', 'social', 'referral', 'email').default('direct'),
-});
+}).options({ stripUnknown: true });
 
 module.exports = {
   createCategorySchema,
@@ -207,4 +210,3 @@ module.exports = {
   mediaUploadSchema,
   trackReadingSchema,
 };
-

@@ -1,8 +1,6 @@
 const mongoose = require('mongoose');
 
 const PGListingSchema = new mongoose.Schema({
-  // NOTE: Keep defaults so existing documents remain valid.
-
   // Basic Information
   name: {
     type: String,
@@ -19,7 +17,7 @@ const PGListingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  
+
   // Location Details
   city: {
     type: String,
@@ -54,7 +52,7 @@ const PGListingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  
+
   // MAP COORDINATES
   coordinates: {
     lat: {
@@ -66,7 +64,7 @@ const PGListingSchema = new mongoose.Schema({
       default: null
     }
   },
-  
+
   // GeoJSON format for MongoDB geospatial queries
   location: {
     type: {
@@ -79,7 +77,7 @@ const PGListingSchema = new mongoose.Schema({
       default: [0, 0]
     }
   },
-  
+
   // Pricing
   price: {
     type: Number,
@@ -91,7 +89,7 @@ const PGListingSchema = new mongoose.Schema({
     enum: ['boys', 'girls', 'co-ed', 'family'],
     default: 'boys'
   },
-  
+
   // Media
   images: [{
     type: String
@@ -99,15 +97,14 @@ const PGListingSchema = new mongoose.Schema({
   gallery: [{
     type: String
   }],
-  
-  // ✅ NEW: Virtual Tour Fields
+
+  // Virtual Tour Fields
   videoUrl: {
     type: String,
     default: '',
     validate: {
       validator: function(v) {
         if (!v) return true;
-        // Validate YouTube, Vimeo URLs
         return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|vimeo\.com)\/.+$/.test(v);
       },
       message: 'Invalid video URL. Please provide a valid YouTube or Vimeo URL'
@@ -119,13 +116,12 @@ const PGListingSchema = new mongoose.Schema({
     validate: {
       validator: function(v) {
         if (!v) return true;
-        // Only accept YouTube URLs (youtube.com or youtu.be)
         return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(v);
       },
       message: 'Invalid virtual tour URL. Only YouTube URLs (youtube.com or youtu.be) are allowed'
     }
   },
-  
+
   // Features
   amenities: [{
     type: String
@@ -134,11 +130,22 @@ const PGListingSchema = new mongoose.Schema({
     type: String
   }],
 
-  // ✅ Room inventory (hotel-like capacity per room type)
-  // Backward compatible: older PG documents may not have this field.
+  // Room inventory (hotel-like capacity per room type)
   roomInventory: {
     type: mongoose.Schema.Types.Mixed,
     default: {},
+  },
+
+  // Top-level room counts (synced with numberOfRooms & roomInventory)
+  totalRooms: {
+    type: Number,
+    min: 0,
+    default: 1,
+  },
+  availableRooms: {
+    type: Number,
+    min: 0,
+    default: 1,
   },
 
   availability: {
@@ -148,7 +155,6 @@ const PGListingSchema = new mongoose.Schema({
     trim: true,
   },
 
-  
   // Status Flags
   published: {
     type: Boolean,
@@ -166,7 +172,7 @@ const PGListingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  
+
   // Ratings & Reviews
   rating: {
     type: Number,
@@ -178,7 +184,7 @@ const PGListingSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  
+
   // DEMAND METER FIELDS
   views: {
     type: Number,
@@ -196,7 +202,7 @@ const PGListingSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  
+
   // Owner Information
   ownerName: {
     type: String,
@@ -214,7 +220,7 @@ const PGListingSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  
+
   // Contact Information
   contactEmail: {
     type: String,
@@ -225,10 +231,6 @@ const PGListingSchema = new mongoose.Schema({
     default: ''
   },
 
-  // ============================
-  // EasyToRent Property Registration (NEW)
-  // ============================
-
   // Property type requested by product: PG or Flat
   propertyType: {
     type: String,
@@ -238,13 +240,11 @@ const PGListingSchema = new mongoose.Schema({
     index: true,
   },
 
-  // Auto-generated unique property number (backend-only)
-  // Example: ETR-PG-00001 / ETR-FLT-00001
   propertyNumber: {
     type: String,
     unique: true,
     index: true,
-    required: false, // allow migration for old documents
+    required: false,
   },
 
   // Rooms inventory
@@ -261,7 +261,7 @@ const PGListingSchema = new mongoose.Schema({
     default: false,
   },
 
-  // Check-in & check-out timing (future booking system)
+  // Check-in & check-out timing
   checkInTime: {
     type: String,
     default: '12:00 AM',
@@ -271,7 +271,7 @@ const PGListingSchema = new mongoose.Schema({
     default: '12:00 AM',
   },
 
-  // Verification status requested by product
+  // Verification status
   verificationStatus: {
     type: String,
     enum: ['Pending', 'Verified', 'Rejected'],
@@ -279,10 +279,6 @@ const PGListingSchema = new mongoose.Schema({
     index: true,
   },
 
-  // Draft save is represented by published=false (backward compatibility)
-  // Keep published boolean as the existing control.
-
-  // Completion percentage (computed)
   completionPercentage: {
     type: Number,
     default: 0,
@@ -291,19 +287,16 @@ const PGListingSchema = new mongoose.Schema({
     index: true,
   },
 
-  // House rules (Airbnb style)
   houseRules: [{
     type: String,
     trim: true,
   }],
 
-  // Cover photo support (single primary image)
   coverPhoto: {
     type: String,
     default: '',
   },
 
-  // Generated when an admin approves or publishes a listing.
   seo: {
     slug: {
       type: String,
@@ -337,7 +330,6 @@ const PGListingSchema = new mongoose.Schema({
     },
   },
 
-  // Google Maps location details
   geoAddress: {
     type: String,
     default: '',
@@ -351,7 +343,6 @@ const PGListingSchema = new mongoose.Schema({
     default: null,
   },
 
-  // Nearby landmark & distance
   nearbyLandmark: {
     type: String,
     default: '',
@@ -361,15 +352,12 @@ const PGListingSchema = new mongoose.Schema({
     default: null,
     min: 0,
   },
-
-  // Old system fields continue below...
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Create slug before saving
 PGListingSchema.pre('save', function(next) {
   if (this.isModified('name') || !this.slug) {
     this.slug = this.name
@@ -378,19 +366,17 @@ PGListingSchema.pre('save', function(next) {
       .replace(/[^a-z0-9-]/g, '')
       .replace(/-+/g, '-');
   }
-  
-  // Auto-sync coordinates with location field for geospatial queries
+
   if (this.coordinates && this.coordinates.lat && this.coordinates.lng) {
     this.location = {
       type: 'Point',
       coordinates: [this.coordinates.lng, this.coordinates.lat]
     };
   }
-  
+
   next();
 });
 
-// Virtual to get lat/lng easily
 PGListingSchema.virtual('lat').get(function() {
   return this.coordinates?.lat || this.location?.coordinates?.[1] || null;
 });
@@ -408,13 +394,11 @@ PGListingSchema.virtual('isAvailable').get(function() {
     .includes(String(this.availability || '').toLowerCase());
 });
 
-// ✅ NEW: Virtual to get video embed URL
 PGListingSchema.virtual('videoEmbedUrl').get(function() {
   if (!this.videoUrl) return null;
-  
+
   let embedUrl = this.videoUrl;
-  
-  // Convert YouTube URLs to embed format
+
   if (embedUrl.includes('youtube.com/watch?v=')) {
     embedUrl = embedUrl.replace('watch?v=', 'embed/');
   } else if (embedUrl.includes('youtu.be/')) {
@@ -424,16 +408,14 @@ PGListingSchema.virtual('videoEmbedUrl').get(function() {
     const videoId = embedUrl.split('vimeo.com/')[1]?.split('?')[0];
     embedUrl = `https://player.vimeo.com/video/${videoId}`;
   }
-  
+
   return embedUrl;
 });
 
-// ✅ NEW: Virtual to check if virtual tour exists
 PGListingSchema.virtual('hasVirtualTour').get(function() {
   return !!(this.videoUrl || this.virtualTour);
 });
 
-// ✅ NEW: Virtual to get virtual tour type
 PGListingSchema.virtual('virtualTourType').get(function() {
   if (this.videoUrl) {
     if (this.videoUrl.includes('youtube') || this.videoUrl.includes('youtu.be')) {
@@ -456,50 +438,39 @@ PGListingSchema.virtual('virtualTourType').get(function() {
   return null;
 });
 
-// Helper method to get formatted coordinates for frontend
 PGListingSchema.methods.getMapCoordinates = function() {
   const lat = this.coordinates?.lat || this.location?.coordinates?.[1];
   const lng = this.coordinates?.lng || this.location?.coordinates?.[0];
-  
+
   if (lat && lng) {
     return { lat, lng };
   }
   return null;
 };
 
-// Method to increment view count
 PGListingSchema.methods.incrementViews = async function() {
   this.views += 1;
   this.lastViewUpdate = new Date();
   return await this.save();
 };
 
-// Method to increment booking count
 PGListingSchema.methods.incrementBookings = async function() {
   this.weeklyBookings += 1;
   this.monthlyBookings += 1;
   return await this.save();
 };
 
-// ✅ NEW: Method to update virtual tour
 PGListingSchema.methods.setVirtualTour = async function(videoUrl, virtualTour) {
   if (videoUrl !== undefined) this.videoUrl = videoUrl;
   if (virtualTour !== undefined) this.virtualTour = virtualTour;
   return await this.save();
 };
 
-// ✅ Indexes - Consolidated (removed duplicates)
-PGListingSchema.index({ slug: 1 }); // Single unique index
+PGListingSchema.index({ slug: 1 });
 PGListingSchema.index({ city: 1 });
 PGListingSchema.index({ locationSlug: 1, published: 1, availability: 1 });
-
-// Prevent duplicate registrations: same owner + same property name
-// NOTE: This enforces case-sensitive uniqueness; frontend can normalize if needed later.
 PGListingSchema.index({ ownerId: 1, name: 1 }, { unique: true });
-
-// Inventory-aware searches / filtering (hotel room inventory)
 PGListingSchema.index({ roomInventory: 1 });
-
 PGListingSchema.index({ type: 1, city: 1, published: 1 });
 PGListingSchema.index({ published: 1, price: 1 });
 PGListingSchema.index({ rating: -1, reviewCount: -1 });
@@ -507,16 +478,10 @@ PGListingSchema.index({ createdAt: -1 });
 PGListingSchema.index({ views: -1 });
 PGListingSchema.index({ location: '2dsphere' });
 PGListingSchema.index({ name: 'text', description: 'text', address: 'text', city: 'text' });
-
-// Property number sorting/search support
 PGListingSchema.index({ propertyNumber: 1 });
-
-// Rooms/inventory filters (future)
 PGListingSchema.index({ numberOfRooms: 1 });
-
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 
-// ✅ CRITICAL FIX: Export both names - PG for wishlist compatibility
 module.exports = PGListing;
 module.exports.PG = PGListing;
