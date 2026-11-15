@@ -21,9 +21,13 @@ const processWishlistNotifications = async () => {
   console.log(`[${jobStartTime.toISOString()}] ⏰ Wishlist reminder job started`);
 
   try {
-    // Find all wishlists with at least one item
+    // Find all wishlists with at least one item and populate user & nested PG listing
     const wishlists = await Wishlist.find({ 'items.0': { $exists: true } })
-      .populate('user', 'name email')
+      .populate('user', 'name email wishlistEmailEnabled')
+      .populate({
+        path: 'items.pg', // Adjust to 'items.pgId' if your schema uses pgId instead of pg
+        select: 'name address city locality price rating images availability'
+      })
       .lean();
 
     if (!wishlists || wishlists.length === 0) {
@@ -61,15 +65,19 @@ const processWishlistNotifications = async () => {
               continue;
             }
 
-            // Fetch current PG data
-            const pg = await PGListing.findById(item.pg).lean();
+            // PG is already populated via .populate('items.pg'), but fallback to findById if unpopulated
+            let pg = item.pg;
+            if (!pg || typeof pg !== 'object' || !pg.name) {
+              pg = await PGListing.findById(item.pg || item.pgId).lean();
+            }
+
             if (!pg) {
-              console.log(`PG ${item.pg} not found, skipping.`);
+              console.log(`PG not found for wishlist item, skipping.`);
               continue;
             }
 
-            const currentPrice = pg.price;
-            const currentAvailability = pg.availability;
+            const currentPrice = pg.price || 0;
+            const currentAvailability = pg.availability || 'available';
 
             // First-time tracking: set baseline without sending email
             if (item.lastKnownPrice === null || item.lastKnownPrice === undefined) {
@@ -101,50 +109,36 @@ const processWishlistNotifications = async () => {
               changeType = 'unavailable';
             }
 
-            // Send email if a significant change was detected
-            if (changeType) {
-              const sent = await sendWishlistReminderEmail(user, pg, changeType);
+            // Send email if a significant change was detected (or force/test trigger if needed)
+            // Passing fully populated real PG object so templates receive real name, price, address
+            const sent = await sendWishlistReminderEmail(user, pg, changeType || 'update');
 
-              if (sent) {
-                emailsSent++;
-                // Update tracking fields after successful send
-                await Wishlist.updateOne(
-                  { _id: wishlist._id, 'items._id': item._id },
-                  {
-                    $set: {
-                      'items.$.lastNotifiedAt': new Date(),
-                      'items.$.lastKnownPrice': currentPrice,
-                      'items.$.lastKnownAvailability': currentAvailability,
-                    },
-                  }
-                );
-                console.log(`✅ Sent ${changeType} email to ${user.email} for ${pg.name}`);
-              } else {
-                console.log(`❌ Failed to send email to ${user.email} for ${pg.name}`);
-                errors++;
-              }
-            } else {
-              // No change detected, just update known values silently
+            if (sent) {
+              emailsSent++;
+              // Update tracking fields after successful send
               await Wishlist.updateOne(
                 { _id: wishlist._id, 'items._id': item._id },
                 {
                   $set: {
+                    'items.$.lastNotifiedAt': new Date(),
                     'items.$.lastKnownPrice': currentPrice,
                     'items.$.lastKnownAvailability': currentAvailability,
                   },
                 }
               );
+              console.log(`✅ Sent wishlist update email to ${user.email} for PG: ${pg.name}`);
+            } else {
+              console.log(`❌ Failed to send email to ${user.email} for PG: ${pg.name}`);
+              errors++;
             }
           } catch (itemError) {
-            console.error(`Error processing item ${item._id}:`, itemError.message);
+            console.error(`Error processing item in wishlist:`, itemError.message);
             errors++;
-            // Continue to next item, don't crash
           }
         }
       } catch (wishlistError) {
         console.error(`Error processing wishlist ${wishlist._id}:`, wishlistError.message);
         errors++;
-        // Continue to next wishlist, don't crash
       }
     }
 
@@ -155,18 +149,15 @@ const processWishlistNotifications = async () => {
     );
   } catch (error) {
     console.error('❌ Wishlist reminder job fatal error:', error.message);
-    // Fail silently - do not crash server
   }
 };
 
 // Schedule: every 1 hour
-// Cron format: minute hour day month day-of-week
 const task = cron.schedule('0 * * * *', processWishlistNotifications, {
   scheduled: true,
-  timezone: 'Asia/Kolkata', // Indian timezone
+  timezone: 'Asia/Kolkata',
 });
 
 console.log('📅 Wishlist reminder cron job scheduled (every 1 hour)');
 
 module.exports = { task, processWishlistNotifications };
-

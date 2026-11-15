@@ -1,4 +1,3 @@
-// backend/src/models/Booking.js
 const mongoose = require('mongoose');
 
 const bookingSchema = new mongoose.Schema({
@@ -87,7 +86,7 @@ const bookingSchema = new mongoose.Schema({
     min: 0
   },
   
-  // ✅ NEW: Multi-Provider Support
+  // Multi-Provider Support
   paymentProvider: {
     type: String,
     enum: ['razorpay', 'stripe', 'cash', 'none'],
@@ -98,7 +97,7 @@ const bookingSchema = new mongoose.Schema({
     default: ''
   },
   
-  // ✅ NEW: Payment Tracking
+  // Payment Tracking
   paymentAttempts: {
     type: Number,
     default: 0
@@ -119,7 +118,7 @@ const bookingSchema = new mongoose.Schema({
     default: ''
   },
   
-  // ✅ NEW: Refund Tracking
+  // Refund Tracking
   refundAmount: {
     type: Number,
     default: 0
@@ -136,7 +135,7 @@ const bookingSchema = new mongoose.Schema({
     default: ''
   },
   
-  // ✅ NEW: Payment Metadata
+  // Payment Metadata
   paymentMetadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
@@ -183,7 +182,7 @@ const bookingSchema = new mongoose.Schema({
     ref: 'User'
   },
   
-  // ✅ NEW: Invoice Details
+  // Invoice Details
   invoiceNumber: {
     type: String,
     unique: true,
@@ -194,13 +193,13 @@ const bookingSchema = new mongoose.Schema({
     default: ''
   },
   
-  // ✅ NEW: Admin Notes
+  // Admin Notes
   adminNotes: {
     type: String,
     default: ''
   },
   
-  // ✅ NEW: Coupon/Discount Details
+  // Coupon/Discount Details
   couponCode: {
     type: String,
     default: ''
@@ -210,10 +209,12 @@ const bookingSchema = new mongoose.Schema({
     default: 0
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
-// ✅ Generate unique invoice number before saving
+// Generate unique invoice number before saving
 bookingSchema.pre('save', async function(next) {
   if (this.isNew && this.paymentStatus === 'paid' && !this.invoiceNumber) {
     const year = new Date().getFullYear();
@@ -223,7 +224,7 @@ bookingSchema.pre('save', async function(next) {
   next();
 });
 
-// ✅ Virtual for payment status display
+// Virtual for payment status display
 bookingSchema.virtual('paymentStatusDisplay').get(function() {
   const statusMap = {
     'pending': 'Awaiting Payment',
@@ -241,7 +242,7 @@ bookingSchema.virtual('calculatedAmountDue').get(function() {
   return Math.max(0, Number(this.totalAmount || 0) - Number(this.amountPaid || 0));
 });
 
-// ✅ Virtual for booking status display
+// Virtual for booking status display
 bookingSchema.virtual('bookingStatusDisplay').get(function() {
   const statusMap = {
     'pending': 'Pending Confirmation',
@@ -253,7 +254,7 @@ bookingSchema.virtual('bookingStatusDisplay').get(function() {
   return statusMap[this.status] || this.status;
 });
 
-// ✅ Virtual for can cancel
+// Virtual for can cancel
 bookingSchema.virtual('canCancel').get(function() {
   if (this.status !== 'confirmed') return false;
   if (this.paymentStatus !== 'paid') return false;
@@ -262,11 +263,10 @@ bookingSchema.virtual('canCancel').get(function() {
     (new Date(this.checkInDate) - new Date()) / (1000 * 60 * 60 * 24)
   );
   
-  // Can cancel only if 3+ days before check-in
   return daysUntilCheckIn >= 3;
 });
 
-// ✅ Virtual for refund eligibility
+// Virtual for refund eligibility
 bookingSchema.virtual('refundEligible').get(function() {
   if (this.paymentStatus !== 'paid') return false;
   if (this.status === 'refunded') return false;
@@ -280,14 +280,11 @@ bookingSchema.virtual('refundEligible').get(function() {
   return { eligible: false, percentage: 0 };
 });
 
-// ✅ Indexes - Consolidated (removed duplicates)
+// Optimized Indexes (Duplicate invoiceNumber index removed)
 bookingSchema.index({ userId: 1, status: 1 });
 bookingSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
 bookingSchema.index({ pgId: 1, checkInDate: 1 });
-// Inventory-aware availability checks
 bookingSchema.index({ pgId: 1, roomType: 1, status: 1, checkInDate: 1, checkOutDate: 1 });
-
-bookingSchema.index({ invoiceNumber: 1 }, { sparse: true }); // Single unique index
 bookingSchema.index({ paymentStatus: 1, status: 1 });
 bookingSchema.index({ createdAt: -1 });
 bookingSchema.index({ razorpayOrderId: 1 }, { unique: true, sparse: true });
@@ -305,4 +302,6 @@ bookingSchema.index({
   }
 });
 
-module.exports = mongoose.model('Booking', bookingSchema);
+const Booking = mongoose.model('Booking', bookingSchema);
+
+module.exports = Booking;

@@ -1,77 +1,54 @@
-// backend/src/routes/paymentRoutes.js
 const express = require('express');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
-const {
-  createCallCreditOrder,
-  verifyCallCreditPayment,
-  getCreditBalance,
-  useContactCredit,
-  generateUPIQR,
-  verifyUPIPayment
-} = require('../controllers/paymentController');
+const { initializePayment, verifyPayment } = require('../controllers/paymentBookingController');
+const { generateBookingUpiQr, submitManualPayment, approveManualPayment } = require('../controllers/paymentUpiManualController');
+const { getPaymentStatus, getPaymentHistory, refundPayment, paymentWebhook } = require('../controllers/paymentAdminWebhookController');
 
-// ✅ Import advanced booking payment controllers
-let advancedPayment;
-try {
-  advancedPayment = require('../controllers/advancedPaymentController');
-  console.log('✅ advancedPaymentController loaded successfully');
-} catch (err) {
-  console.error('❌ Failed to load advancedPaymentController:', err.message);
-  advancedPayment = {};
-}
-
-const { initializePayment, verifyPayment, getPaymentHistory, getPaymentStatus, refundPayment, submitManualPayment, approveManualPayment } = advancedPayment;
+// ✅ Import Cache Invalidation Helper
+const { invalidateCache } = require('../middleware/cache');
 
 const router = express.Router();
 
-// All routes require authentication
+// Webhook (Public route, no auth) - Clears cache when gateway updates payment status
+router.post('/webhook', async (req, res, next) => {
+  await paymentWebhook(req, res, next);
+  await invalidateCache('etr_cache:*');
+});
+
+// Protected routes
 router.use(protect);
 
-// ─── Booking Payment Routes (Razorpay / Stripe) ───
-if (initializePayment) {
-  router.post('/init', initializePayment);
-  console.log('✅ Route registered: POST /init');
-} else {
-  console.warn('⚠️ initializePayment not found — POST /init will be unavailable');
-}
+router.post('/init', initializePayment);
 
-if (verifyPayment) {
-  router.post('/verify', verifyPayment);
-  console.log('✅ Route registered: POST /verify');
-} else {
-  console.warn('⚠️ verifyPayment not found — POST /verify will be unavailable');
-}
+// Verify payment updates booking status -> Invalidate cache
+router.post('/verify', async (req, res, next) => {
+  await verifyPayment(req, res, next);
+  if (res.statusCode === 200 || res.statusCode === 201) {
+    await invalidateCache('etr_cache:*');
+  }
+});
 
-if (getPaymentHistory) {
-  router.get('/history', getPaymentHistory);
-  console.log('✅ Route registered: GET /history');
-} else {
-  console.warn('⚠️ getPaymentHistory not found — GET /history will be unavailable');
-}
-if (getPaymentStatus) {
-  router.get('/status/:bookingId', getPaymentStatus);
-}
-if (submitManualPayment) {
-  router.post('/manual', submitManualPayment);
-}
-if (approveManualPayment) {
-  router.post('/manual/:paymentId/approve', adminOnly, approveManualPayment);
-}
-if (refundPayment) {
-  router.post('/refund', adminOnly, refundPayment);
-}
+// Private user financial data -> NOT cached for security
+router.get('/history', getPaymentHistory);
+router.get('/status/:bookingId', getPaymentStatus);
 
-// Card/Razorpay routes (Call Credits)
-router.post('/create-call-credit-order', createCallCreditOrder);
-router.post('/create-order', createCallCreditOrder);
-router.post('/verify-call-credit', verifyCallCreditPayment);
+router.post('/booking-upi-qr', generateBookingUpiQr);
+router.post('/manual', submitManualPayment);
 
-// UPI/QR routes
-router.post('/generate-upi-qr', generateUPIQR);
-router.post('/verify-upi-payment', verifyUPIPayment);
+// Admin manual payment approval -> Invalidate cache
+router.post('/manual/:paymentId/approve', adminOnly, async (req, res, next) => {
+  await approveManualPayment(req, res, next);
+  if (res.statusCode === 200) {
+    await invalidateCache('etr_cache:*');
+  }
+});
 
-// Credit management routes
-router.get('/credit-balance', getCreditBalance);
-router.post('/use-contact-credit', useContactCredit);
+// Admin refund -> Invalidate cache
+router.post('/refund', adminOnly, async (req, res, next) => {
+  await refundPayment(req, res, next);
+  if (res.statusCode === 200) {
+    await invalidateCache('etr_cache:*');
+  }
+});
 
 module.exports = router;

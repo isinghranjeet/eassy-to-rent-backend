@@ -7,6 +7,9 @@ const { protect, adminOnly, ownerOrAdmin } = require("../middleware/authMiddlewa
 const upload = require("../middleware/uploadMiddleware");
 const { ensureLocation, syncLocationMetadata } = require("../utils/locationUtils");
 
+// ✅ Import Advanced Cache Middleware and Invalidation Helper
+const { cacheMiddleware, invalidateCache } = require("../middleware/cache");
+
 // @desc    Get owner's own listings
 // @route   GET /api/pg/my-listings
 // @access  Private (owner/admin)
@@ -31,10 +34,10 @@ router.get("/my-listings", protect, ownerOrAdmin, async (req, res) => {
   }
 });
 
-// @desc    Get all PG listings (public - only published)
+// @desc    Get all PG listings (public - only published) -> ⚡ Cached for 300 seconds (5 mins)
 // @route   GET /api/pg
 // @access  Public
-router.get("/", async (req, res) => {
+router.get("/", cacheMiddleware(300), async (req, res) => {
   try {
     const {
       city,
@@ -118,19 +121,12 @@ router.get("/admin", protect, adminOnly, async (req, res) => {
   }
 });
 
-// @desc    Get single PG listing
+// @desc    Get single PG listing -> ⚡ Cached for 300 seconds
 // @route   GET /api/pg/:id
 // @access  Public
-router.get("/:id", async (req, res) => {
+router.get("/:id", cacheMiddleware(300), async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Debug logging
-    console.log('=== GET PG BY ID DEBUG ===');
-    console.log('Raw req.params:', req.params);
-    console.log('ID value:', id);
-    console.log('ID type:', typeof id);
-    console.log('ID stringified:', JSON.stringify(id));
     
     // Check if ID exists
     if (!id) {
@@ -193,8 +189,6 @@ router.get("/:id", async (req, res) => {
         message: "PG listing not found",
       });
     }
-
-    console.log('PG found:', listing._id);
     
     res.json({
       success: true,
@@ -221,14 +215,12 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// @desc    Get PG listing by slug
+// @desc    Get PG listing by slug -> ⚡ Cached for 300 seconds
 // @route   GET /api/pg/slug/:slug
 // @access  Public
-router.get("/slug/:slug", async (req, res) => {
+router.get("/slug/:slug", cacheMiddleware(300), async (req, res) => {
   try {
     const { slug } = req.params;
-    
-    console.log('Fetching PG by slug:', slug);
     
     if (!slug) {
       return res.status(400).json({
@@ -354,7 +346,6 @@ router.post(
     const mongoose = require('mongoose');
     const Counter = require('../models/Counter');
 
-    // NOTE: propertyNumber generation is backend-only and atomic.
     const generatePropertyNumber = async (propertyType) => {
       const prefix = propertyType === 'FLT' ? 'ETR-FLT-' : 'ETR-PG-';
       const key = `propertyNumber:${prefix === 'ETR-FLT-' ? 'FLT' : 'PG'}`;
@@ -371,7 +362,6 @@ router.post(
     };
 
     try {
-      // Parse JSON data from 'data' field if sent as stringified JSON
       let pgData = { ...req.body };
 
       if (req.body.data) {
@@ -383,40 +373,33 @@ router.post(
         }
       }
 
-      // Normalize array fields and parse existingImages
       normalizeArrayFields(pgData, req.body);
       parseExistingImages(pgData, req.body);
 
-      // Auto-set owner info from authenticated user
       pgData.ownerId = req.user._id.toString();
       if (!pgData.ownerName) pgData.ownerName = req.user.name;
       if (!pgData.ownerEmail) pgData.ownerEmail = req.user.email;
       if (!pgData.ownerPhone) pgData.ownerPhone = req.user.phone || "";
 
-      // Upload files to Cloudinary
       const images = await uploadFiles(req.files?.images, "pg-listings/main");
       const gallery = await uploadFiles(
         req.files?.gallery,
         "pg-listings/gallery",
       );
 
-      // Merge uploaded images with any URLs provided in body
       pgData.images = [...(pgData.images || []), ...images];
       pgData.gallery = [...(pgData.gallery || []), ...gallery];
       applyCoverPhoto(pgData, pgData.images);
 
-      // Generate slug from name if not provided
       if (pgData.name && !pgData.slug) {
         pgData.slug = generateSlug(pgData.name);
       }
 
-      // Set default values for required fields if missing
       if (!pgData.city) pgData.city = "Chandigarh";
       if (!pgData.type) pgData.type = "boys";
       if (!pgData.contactPhone)
         pgData.contactPhone = pgData.contactPhone || pgData.ownerPhone || "";
 
-      // Enforce duplicate prevention: Same owner + same property name
       const duplicate = await PGListing.findOne({
         ownerId: pgData.ownerId,
         name: pgData.name,
@@ -428,33 +411,27 @@ router.post(
         });
       }
 
-      // Generate auto propertyNumber (backend-only)
       if (!pgData.propertyNumber) {
-        // Backward compatible mapping from old `type`.
-        // If frontend sends propertyType use it; else map from pgData.type.
-        const propertyType = pgData.propertyType || (pgData.type === 'family' ? 'PG' : (pgData.type === 'co-ed' ? 'PG' : (pgData.type === 'boys' || pgData.type === 'girls' ? 'PG' : 'PG')));
+        const propertyType = pgData.propertyType || 'PG';
         pgData.propertyType = propertyType;
         pgData.propertyNumber = await generatePropertyNumber(propertyType);
       }
 
-      // Completion percentage (minimal default; frontend can drive richer computation)
       pgData.completionPercentage = typeof pgData.completionPercentage === 'number' ? pgData.completionPercentage : 0;
 
       const { location } = await ensureLocation(pgData.locality, pgData.city);
       pgData.locationSlug = location.slug;
       pgData.locationId = location._id;
 
-      // Create and save
       const listing = new PGListing(pgData);
       await listing.save();
       await syncLocationMetadata(location.slug);
 
-      // Return generated propertyNumber in response (backend-only)
       pgData.propertyNumber = listing.propertyNumber;
 
-      console.log("PG listing created:", listing._id);
+      // 🧹 Invalidate Cache on New Listing Creation
+      await invalidateCache('etr_cache:*');
 
-      // Log activity
       try {
         await Activity.create({
           type: 'PG_CREATED',
@@ -522,7 +499,6 @@ router.put(
     try {
       const { id } = req.params;
       
-      // Validate ID format
       if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
         return res.status(400).json({
           success: false,
@@ -538,7 +514,6 @@ router.put(
           .json({ success: false, message: "PG listing not found" });
       }
 
-      // Ownership check: user must own the listing or be admin
       if (
         listing.ownerId &&
         listing.ownerId !== req.user._id.toString() &&
@@ -561,41 +536,28 @@ router.put(
         }
       }
 
-      // Normalize array fields and parse existingImages
       normalizeArrayFields(pgData, req.body);
       parseExistingImages(pgData, req.body);
 
-      // Upload files to Cloudinary
       const images = await uploadFiles(req.files?.images, "pg-listings/main");
       const gallery = await uploadFiles(
         req.files?.gallery,
         "pg-listings/gallery",
       );
 
-      // Merge uploaded images with existing/provided URLs
       pgData.images = [...(pgData.images || []), ...images];
       pgData.gallery = [...(pgData.gallery || []), ...gallery];
       applyCoverPhoto(pgData, pgData.images, listing.coverPhoto);
 
-      // Update slug if name changed
       if (pgData.name && pgData.name !== listing.name) {
         pgData.slug = generateSlug(pgData.name);
       }
 
-      // Never allow editing propertyNumber.
       if (pgData.propertyNumber) delete pgData.propertyNumber;
 
-      // Recompute completionPercentage (safe fallback)
       const completionFields = [
-        'name',
-        'description',
-        'address',
-        'price',
-        'amenities',
-        'numberOfRooms',
-        'propertyType',
-        'checkInTime',
-        'checkOutTime',
+        'name', 'description', 'address', 'price', 'amenities', 
+        'numberOfRooms', 'propertyType', 'checkInTime', 'checkOutTime',
       ];
       const present = completionFields.reduce((acc, k) => {
         if (k === 'amenities') return acc + (Array.isArray(pgData.amenities) && pgData.amenities.length > 0 ? 1 : 0);
@@ -610,7 +572,6 @@ router.put(
       pgData.locationSlug = location.slug;
       pgData.locationId = location._id;
 
-      // Update the listing
       Object.assign(listing, pgData);
       listing.updatedAt = Date.now();
 
@@ -620,7 +581,8 @@ router.put(
       }
       await syncLocationMetadata(location.slug);
 
-      console.log("PG listing updated:", listing._id);
+      // 🧹 Invalidate Cache on Listing Update
+      await invalidateCache('etr_cache:*');
 
       res.json({
         success: true,
@@ -667,7 +629,6 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate ID format
     if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({
         success: false,
@@ -684,7 +645,6 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
       });
     }
 
-    // Ownership check: user must own the listing or be admin
     if (
       listing.ownerId &&
       listing.ownerId !== req.user._id.toString() &&
@@ -703,7 +663,6 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
     const nextLocality = req.body.locality !== undefined ? req.body.locality : listing.locality;
     const { location } = await ensureLocation(nextLocality, nextCity);
 
-    // Update only provided fields
     Object.assign(listing, req.body);
     listing.locationSlug = location.slug;
     listing.locationId = location._id;
@@ -714,6 +673,9 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
       await syncLocationMetadata(previousLocationSlug);
     }
     await syncLocationMetadata(location.slug);
+
+    // 🧹 Invalidate Cache on Patch
+    await invalidateCache('etr_cache:*');
 
     res.json({
       success: true,
@@ -738,13 +700,7 @@ router.patch("/:id", protect, ownerOrAdmin, async (req, res) => {
 // @access  Private/Admin
 router.get("/admin/stats", protect, ownerOrAdmin, async (req, res) => {
   try {
-    const [
-      total,
-      published,
-      verified,
-      featured,
-      pending
-    ] = await Promise.all([
+    const [total, published, verified, featured, pending] = await Promise.all([
       PGListing.countDocuments(),
       PGListing.countDocuments({ published: true }),
       PGListing.countDocuments({ verified: true }),
@@ -754,14 +710,7 @@ router.get("/admin/stats", protect, ownerOrAdmin, async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        total,
-        published,
-        verified,
-        featured,
-        pending,
-        cities: []
-      }
+      data: { total, published, verified, featured, pending, cities: [] }
     });
   } catch (error) {
     console.error("Error fetching PG stats:", error);
@@ -780,7 +729,6 @@ router.delete("/:id", protect, ownerOrAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validate ID format
     if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(400).json({
         success: false,
@@ -797,7 +745,6 @@ router.delete("/:id", protect, ownerOrAdmin, async (req, res) => {
       });
     }
 
-    // Ownership check: user must own the listing or be admin
     if (
       listing.ownerId &&
       listing.ownerId !== req.user._id.toString() &&
@@ -818,6 +765,9 @@ router.delete("/:id", protect, ownerOrAdmin, async (req, res) => {
     }
     await listing.deleteOne();
     if (locationSlug) await syncLocationMetadata(locationSlug);
+
+    // 🧹 Invalidate Cache on Listing Deletion
+    await invalidateCache('etr_cache:*');
 
     res.json({
       success: true,

@@ -13,7 +13,8 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    index: true
   },
 
   password: {
@@ -86,13 +87,15 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: ['user', 'admin', 'owner'],
-    default: 'user'
+    default: 'user',
+    index: true
   },
 
   status: {
     type: String,
     enum: ['active', 'inactive', 'suspended'],
-    default: 'active'
+    default: 'active',
+    index: true
   },
 
   profileImage: {
@@ -150,8 +153,8 @@ const userSchema = new mongoose.Schema({
   googleId: {
     type: String,
     unique: true,
-    sparse: true
-    // ❌ default: null hata diya
+    sparse: true,
+    index: true
   },
 
   avatar: {
@@ -208,7 +211,8 @@ const userSchema = new mongoose.Schema({
 
   createdAt: {
     type: Date,
-    default: Date.now
+    default: Date.now,
+    index: true
   },
 
   updatedAt: {
@@ -359,11 +363,8 @@ userSchema.methods.hasEnoughCredits = function (amount = 1) {
 };
 
 
-// ✅ OPTIMIZED Indexes - Consolidated (no duplicates)
-userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ googleId: 1 }, { sparse: true });
+// ✅ OPTIMIZED Compound & Text Indexes (Duplicates removed)
 userSchema.index({ role: 1, status: 1 });
-userSchema.index({ createdAt: -1 });
 userSchema.index({ name: 'text', email: 'text' });
 
 

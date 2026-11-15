@@ -11,7 +11,8 @@ const PGListingSchema = new mongoose.Schema({
     type: String,
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    index: true // Kept here cleanly
   },
   description: {
     type: String,
@@ -24,6 +25,7 @@ const PGListingSchema = new mongoose.Schema({
     required: true,
     default: 'Chandigarh',
     trim: true,
+    index: true // Indexed here
   },
   locality: {
     type: String,
@@ -87,7 +89,8 @@ const PGListingSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: ['boys', 'girls', 'co-ed', 'family'],
-    default: 'boys'
+    default: 'boys',
+    index: true
   },
 
   // Media
@@ -158,7 +161,8 @@ const PGListingSchema = new mongoose.Schema({
   // Status Flags
   published: {
     type: Boolean,
-    default: true
+    default: true,
+    index: true
   },
   verified: {
     type: Boolean,
@@ -178,7 +182,8 @@ const PGListingSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: 0,
-    max: 5
+    max: 5,
+    index: true
   },
   reviewCount: {
     type: Number,
@@ -188,7 +193,8 @@ const PGListingSchema = new mongoose.Schema({
   // DEMAND METER FIELDS
   views: {
     type: Number,
-    default: 0
+    default: 0,
+    index: true
   },
   weeklyBookings: {
     type: Number,
@@ -218,7 +224,8 @@ const PGListingSchema = new mongoose.Schema({
   },
   ownerId: {
     type: String,
-    default: ''
+    default: '',
+    index: true
   },
 
   // Contact Information
@@ -245,6 +252,7 @@ const PGListingSchema = new mongoose.Schema({
     unique: true,
     index: true,
     required: false,
+    sparse: true
   },
 
   // Rooms inventory
@@ -354,8 +362,8 @@ const PGListingSchema = new mongoose.Schema({
   },
 }, {
   timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  toObject: { virtuals: true },
+  toJSON: { virtuals: true }
 });
 
 PGListingSchema.pre('save', function(next) {
@@ -466,20 +474,14 @@ PGListingSchema.methods.setVirtualTour = async function(videoUrl, virtualTour) {
   return await this.save();
 };
 
-PGListingSchema.index({ slug: 1 });
-PGListingSchema.index({ city: 1 });
+// Compound & Geospatial Indexes (Removed duplicate single-field indexes already defined above)
 PGListingSchema.index({ locationSlug: 1, published: 1, availability: 1 });
 PGListingSchema.index({ ownerId: 1, name: 1 }, { unique: true });
-PGListingSchema.index({ roomInventory: 1 });
 PGListingSchema.index({ type: 1, city: 1, published: 1 });
 PGListingSchema.index({ published: 1, price: 1 });
 PGListingSchema.index({ rating: -1, reviewCount: -1 });
-PGListingSchema.index({ createdAt: -1 });
-PGListingSchema.index({ views: -1 });
 PGListingSchema.index({ location: '2dsphere' });
 PGListingSchema.index({ name: 'text', description: 'text', address: 'text', city: 'text' });
-PGListingSchema.index({ propertyNumber: 1 });
-PGListingSchema.index({ numberOfRooms: 1 });
 
 const PGListing = mongoose.model('PGListing', PGListingSchema);
 

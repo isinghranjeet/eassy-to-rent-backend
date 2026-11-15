@@ -1,24 +1,81 @@
 require('dotenv').config();
-
-const { startServer, closeServer } = require('./app');
+const express = require('express');
 const mongoose = require('mongoose');
-const { logger } = require('./utils/logger');
-const { startBlogScheduler } = require('./jobs/blogSchedulerJob');
+const helmet = require('helmet');
+const compression = require('compression');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const hpp = require('hpp');
+const cors = require('cors');
 
 // ======================
-// CONFIGURATION
+// CONFIGURATION & UTILS
 // ======================
 const PORT = parseInt(process.env.PORT, 10) || 10000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const MONGO_URI = process.env.MONGO_URI;
 
-// ======================
-// VALIDATE ENVIRONMENT
-// ======================
 if (!MONGO_URI) {
-  logger.error('❌ CRITICAL: MONGO_URI environment variable is missing');
+  console.error('❌ CRITICAL: MONGO_URI environment variable is missing');
   process.exit(1);
 }
+
+const { applyCors } = require('./config/corsConfig');
+const { applyRateLimiters } = require('./config/rateLimiters');
+const { logger, addCorrelationId } = require('./utils/logger');
+const { seedAllAdminData } = require('./utils/seedAdminData');
+
+// ✅ Initialize Redis In-Memory Client Connection on Boot
+require('./config/redis');
+
+// ======================
+// ROUTE IMPORTS
+// ======================
+const pgRoutes = require('./routes/pg');
+const authRoutes = require('./routes/auth');
+const bookingRoutes = require('./routes/bookingRoutes');
+const reviewRoutes = require('./routes/reviews');
+const wishlistRoutes = require('./routes/wishlistRoutes');
+const locationRoutes = require('./routes/locationRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const priceAlertRoutes = require('./routes/priceAlertRoutes');
+const blogRoutes = require('./routes/blogRoutes');
+const contactRoutes = require('./routes/contactRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
+const statsRoutes = require('./routes/statsRoutes');
+const userRoutes = require('./routes/userRoutes');
+const profileRoutes = require('./routes/profileRoutes');
+const kycRoutes = require('./routes/kycRoutes'); 
+
+// ✅ SaaS Feature Route Imports
+const searchRoutes = require('./routes/searchRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
+const payoutRoutes = require('./routes/payoutRoutes');
+
+const registerApiRoutes = require('./routes/registerApiRoutes');
+const { registerWebhookRoutes } = require('./routes/registerWebhookRoutes');
+
+const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const cacheHeaders = require('./middleware/cacheHeaders');
+const responseMiddleware = require('./middleware/responseMiddleware');
+
+// ======================
+// CRON JOBS & WORKERS
+// ======================
+require('./jobs/wishlistReminderJob');
+const { startBlogScheduler } = require('./jobs/blogSchedulerJob');
+const { startBookingExpiryJob } = require('./jobs/bookingExpiryJob');
+const { startDailyEngagementJob } = require('./jobs/dailyEngagementJob');
+
+const app = express();
+let server = null;
+
+// ======================
+// TRUST PROXY (for Render/Heroku)
+// ======================
+app.set('trust proxy', 1);
 
 // ======================
 // DATABASE CONNECTION
@@ -28,12 +85,12 @@ const connectDB = async () => {
     const connOptions = {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
-      family: 4, // Use IPv4, skip trying IPv6
+      family: 4,
       retryWrites: true,
       retryReads: true,
       maxPoolSize: 10,
       minPoolSize: 2,
-      bufferCommands: true, // ✅ FIX: Allows commands to buffer until connection is fully established (prevents cold start 500 crashes)
+      bufferCommands: true,
     };
 
     await mongoose.connect(MONGO_URI, connOptions);
@@ -41,103 +98,188 @@ const connectDB = async () => {
     logger.info('✅ MongoDB connected successfully', {
       host: mongoose.connection.host,
       database: mongoose.connection.name,
-      poolSize: mongoose.connection.pool?.size
     });
     
     return true;
   } catch (err) {
-    logger.error('❌ MongoDB Connection Error:', {
-      message: err.message,
-      code: err.code,
-      name: err.name
-    });
+    logger.error('❌ MongoDB Connection Error:', { message: err.message });
     return false;
   }
 };
 
+mongoose.connection.once('open', () => {
+  logger.info('✅ MongoDB connection established, seeding admin data...');
+  startBookingExpiryJob();
+  startDailyEngagementJob();
+  
+  seedAllAdminData().catch(err => {
+    logger.error('❌ Error seeding admin data:', err);
+  });
+});
+
 // ======================
-// GRACEFUL SHUTDOWN (PRODUCTION READY)
+// SECURITY & CENTRALIZED MIDDLEWARE
+// ======================
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+}));
+
+app.use(compression());
+applyCors(app);
+
+app.use(express.json({
+  limit: '15mb',
+  verify: (req, res, buffer) => {
+    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/paymentgateway/webhook') {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp({ whitelist: ['price', 'rating', 'page', 'limit', 'sort'] }));
+
+app.use(cacheHeaders);
+app.use(responseMiddleware);
+app.use(addCorrelationId);
+
+// ======================
+// LOGGING MIDDLEWARE
+// ======================
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  logger.http(`${req.method} ${req.originalUrl}`, { ip: req.ip });
+  
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    if (duration > 1000) {
+      logger.warn(`Slow request: ${req.method} ${req.originalUrl} took ${duration}ms`);
+    }
+  });
+  next();
+});
+
+applyRateLimiters(app);
+
+// ======================
+// HEALTH CHECK & ROOT ROUTES
+// ======================
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'OK',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    redis: 'connected'
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ success: true, message: 'OK', uptime: process.uptime() });
+});
+
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: '🚀 EasyToRent Enterprise Backend Running with Redis',
+    version: '2.1.0',
+    features: {
+      bookings: true,
+      reviews: true,
+      payments: true,
+      recommendations: true,
+      wishlist: true,
+      priceAlerts: true,
+      blogs: true,
+      stats: true,
+      notifications: true,
+      kyc: true,
+      search: true,
+      maintenance: true,
+      payouts: true,
+      redisCaching: true
+    }
+  });
+});
+
+// ======================
+// API ROUTES REGISTRATION
+// ======================
+registerApiRoutes(app, {
+  pgRoutes,
+  authRoutes,
+  bookingRoutes,
+  reviewRoutes,
+  wishlistRoutes,
+  locationRoutes,
+  notificationRoutes,
+  priceAlertRoutes,
+  blogRoutes,
+  contactRoutes,
+  paymentRoutes,
+  recommendationRoutes,
+  statsRoutes,
+  userRoutes,
+  adminRoutes,
+  profileRoutes,
+  searchRoutes,
+  maintenanceRoutes,
+  payoutRoutes,
+});
+
+app.use('/api/payments', paymentRoutes);
+app.use('/api/admin/kyc', kycRoutes); 
+
+registerWebhookRoutes(app, express);
+
+// ======================
+// ERROR HANDLING
+// ======================
+app.use(notFound);
+app.use(errorHandler);
+
+// ======================
+// SERVER BOOTSTRAP & SHUTDOWN
 // ======================
 let isShuttingDown = false;
 
 const gracefulShutdown = async (signal) => {
-  if (isShuttingDown) {
-    logger.warn(`⚠️ ${signal} received but shutdown already in progress`);
-    return;
-  }
-  
+  if (isShuttingDown) return;
   isShuttingDown = true;
   logger.info(`📥 ${signal} received - Starting graceful shutdown...`);
   
-  const forceShutdownTimeout = setTimeout(() => {
-    logger.error('❌ Force shutdown timeout reached - exiting immediately');
-    process.exit(1);
-  }, 30000);
-  
   try {
-    logger.info('🛑 Closing HTTP server...');
-    await closeServer();
-    logger.info('✅ HTTP server closed successfully');
-    
-    if (mongoose.connection && mongoose.connection.readyState === 1) {
-      logger.info('🛑 Closing MongoDB connection...');
-      await mongoose.connection.close();
-      logger.info('✅ MongoDB connection closed successfully');
-    } else {
-      logger.info('No active MongoDB connection to close');
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+      logger.info('🛑 HTTP server closed');
     }
-    
-    clearTimeout(forceShutdownTimeout);
-    logger.info('✅ Graceful shutdown completed successfully');
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.close();
+      logger.info('🛑 MongoDB connection closed');
+    }
     process.exit(0);
-    
   } catch (err) {
-    logger.error('❌ Error during graceful shutdown:', {
-      message: err.message,
-      stack: err.stack
-    });
-    
-    clearTimeout(forceShutdownTimeout);
+    logger.error('❌ Shutdown error:', err);
     process.exit(1);
   }
 };
-
-// ======================
-// ERROR HANDLERS
-// ======================
-const handleUnexpectedError = async (error, type) => {
-  logger.error(`❌ ${type}:`, {
-    message: error.message,
-    stack: error.stack,
-    name: error.name
-  });
-  await gracefulShutdown(type);
-};
-
-process.on('uncaughtException', (error) => {
-  handleUnexpectedError(error, 'UNCAUGHT_EXCEPTION');
-});
-
-process.on('unhandledRejection', (error) => {
-  handleUnexpectedError(error, 'UNHANDLED_REJECTION');
-});
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-process.on('exit', (code) => {
-  logger.info(`Process exiting with code: ${code}`);
-});
-
-// ======================
-// APPLICATION BOOTSTRAP
-// ======================
 const bootstrap = async () => {
-  logger.info('🔥 Initializing PG Finder Backend...');
-  logger.info(`📦 Node Version: ${process.version}`);
-  logger.info(`🔧 Environment: ${NODE_ENV}`);
-  logger.info(`🌍 Port: ${PORT}`);
-  
+  logger.info('🔥 Initializing EasyToRent Enterprise Backend...');
   const dbConnected = await connectDB();
   
   if (!dbConnected) {
@@ -145,50 +287,17 @@ const bootstrap = async () => {
     process.exit(1);
   }
   
-  try {
-    const server = startServer(PORT);
-    
-    server.on('error', (err) => {
-      logger.error('❌ Server error:', err);
-      if (err.code === 'EADDRINUSE') {
-        logger.error(`Port ${PORT} is already in use`);
-        process.exit(1);
-      }
-    });
-    
-    logger.info('🚀 Server startup complete');
-    logger.info(`📡 API available at: http://localhost:${PORT}`);
-    
+  server = app.listen(PORT, () => {
+    logger.info(`🚀 Server running on port ${PORT}`);
     startBlogScheduler();
-    
-    logger.info(`✅ Application started successfully at ${new Date().toISOString()}`);
-    
-  } catch (err) {
-    logger.error('❌ Failed to start server:', err);
-    process.exit(1);
-  }
+    startDailyEngagementJob();
+  });
+
+  server.timeout = 120000;
+  server.keepAliveTimeout = 65000;
 };
 
-// ======================
-// START THE APPLICATION
-// ======================
 bootstrap().catch((err) => {
   logger.error('❌ Bootstrap failed:', err);
   process.exit(1);
 });
-
-// ======================
-// HEALTH MONITORING
-// ======================
-if (NODE_ENV === 'production') {
-  setInterval(() => {
-    const memoryUsage = process.memoryUsage();
-    if (memoryUsage.heapUsed > 500 * 1024 * 1024) {
-      logger.warn('⚠️ High memory usage detected', {
-        heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
-        heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
-        rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`
-      });
-    }
-  }, 60000);
-}

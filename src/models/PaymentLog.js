@@ -4,46 +4,78 @@ const paymentLogSchema = new mongoose.Schema({
   bookingId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Booking',
-    required: true
+    required: true,
+    index: true // Indexed via compound index below as well, but clean here
   },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    index: true
   },
   amount: {
     type: Number,
-    required: true
+    required: [true, 'Payment amount is required'],
+    min: [0, 'Amount cannot be negative']
   },
   status: {
     type: String,
     enum: ['pending', 'initiated', 'processing', 'success', 'failed', 'refunded'],
-    default: 'initiated'
+    default: 'initiated',
+    index: true
   },
   paymentMethod: {
     type: String,
     enum: ['razorpay', 'stripe', 'card', 'upi', 'upi_qr', 'manual', 'netbanking'],
     default: 'razorpay'
   },
-  paymentId: String,
-  error: String,
-  note: String,
-  ipAddress: String,
-  userAgent: String,
-  metadata: mongoose.Schema.Types.Mixed
-  ,receiptStatus: {
+  paymentId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
+  error: {
+    type: String,
+    default: ''
+  },
+  note: {
+    type: String,
+    default: ''
+  },
+  ipAddress: {
+    type: String,
+    default: ''
+  },
+  userAgent: {
+    type: String,
+    default: ''
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  receiptStatus: {
     type: String,
     enum: ['pending', 'sending', 'sent', 'failed'],
-    default: 'pending'
+    default: 'pending',
+    index: true
   },
-  receiptMessageId: String
+  receiptMessageId: {
+    type: String,
+    default: ''
+  }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
 
+// ✅ Optimized Compound Indexes (Single field indexes handled cleanly)
 paymentLogSchema.index({ bookingId: 1, createdAt: -1 });
 paymentLogSchema.index({ userId: 1, createdAt: -1 });
-paymentLogSchema.index({ status: 1 });
-paymentLogSchema.index({ paymentId: 1 }, { unique: true, sparse: true });
+paymentLogSchema.index({ status: 1, createdAt: -1 });
 
-module.exports = mongoose.model('PaymentLog', paymentLogSchema);
+const PaymentLog = mongoose.model('PaymentLog', paymentLogSchema);
+
+module.exports = PaymentLog;

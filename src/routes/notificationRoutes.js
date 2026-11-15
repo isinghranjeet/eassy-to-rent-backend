@@ -6,6 +6,9 @@ const User = require('../models/User');
 const { sendWishlistReminder, sendOfferEmail, sendBookingConfirmation } = require('../utils/sendEmail');
 const { successResponse, errorResponse } = require('../utils/response');
 
+// ✅ Import Advanced Cache Middleware and Invalidation Helper
+const { cacheMiddleware, invalidateCache } = require('../middleware/cache');
+
 // ======================
 // USER ROUTES (Requires Authentication)
 // ======================
@@ -124,13 +127,11 @@ router.post('/admin/wishlist-reminder/:userId', adminOnly, async (req, res) => {
   try {
     const { userId } = req.params;
     
-    // Find user
     const user = await User.findById(userId);
     if (!user) {
       return errorResponse(res, { statusCode: 404, message: 'User not found' });
     }
     
-    // Get user's wishlist
     const wishlist = await Wishlist.findOne({ user: userId })
       .populate('items.pg');
     
@@ -138,7 +139,6 @@ router.post('/admin/wishlist-reminder/:userId', adminOnly, async (req, res) => {
       return errorResponse(res, { statusCode: 400, message: 'User has no wishlist items' });
     }
     
-    // Send reminder
     const sent = await sendWishlistReminder(user, wishlist.items);
     
     if (sent) {
@@ -163,7 +163,6 @@ router.post('/admin/wishlist-reminder/:userId', adminOnly, async (req, res) => {
 // @access  Private/Admin
 router.post('/admin/bulk-wishlist-reminder', adminOnly, async (req, res) => {
   try {
-    // Find all users who have wishlist items
     const usersWithWishlist = await Wishlist.find({ 'items.0': { $exists: true } }).distinct('user');
     
     if (usersWithWishlist.length === 0) {
@@ -190,10 +189,12 @@ router.post('/admin/bulk-wishlist-reminder', adminOnly, async (req, res) => {
         failCount++;
       }
       
-      // Small delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 500));
     }
     
+    // Invalidate cache after bulk operation affecting user stats
+    await invalidateCache('etr_cache:*');
+
     return successResponse(res, { 
       message: `Bulk reminder completed: ${sentCount} sent, ${failCount} failed`,
       data: { 
@@ -216,7 +217,6 @@ router.post('/admin/bulk-offer', adminOnly, async (req, res) => {
   try {
     const { offerMessage, discountCode } = req.body;
     
-    // Get all active users
     const activeUsers = await User.find({ status: 'active' });
     
     if (activeUsers.length === 0) {
@@ -246,17 +246,16 @@ router.post('/admin/bulk-offer', adminOnly, async (req, res) => {
   }
 });
 
-// @desc    Get notification stats (admin only)
+// @desc    Get notification stats (admin only) -> ⚡ Cached for 60 seconds
 // @route   GET /api/notifications/admin/stats
 // @access  Private/Admin
-router.get('/admin/stats', adminOnly, async (req, res) => {
+router.get('/admin/stats', adminOnly, cacheMiddleware(60), async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
     const usersWithWishlist = await Wishlist.countDocuments({ 'items.0': { $exists: true } });
     const activeUsers = await User.countDocuments({ status: 'active' });
     const suspendedUsers = await User.countDocuments({ status: 'suspended' });
     
-    // Get wishlist items count
     const wishlistStats = await Wishlist.aggregate([
       { $unwind: '$items' },
       { $group: { _id: null, totalItems: { $sum: 1 } } }

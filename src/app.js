@@ -30,11 +30,16 @@ const recommendationRoutes = require('./routes/recommendationRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const userRoutes = require('./routes/userRoutes');
 const profileRoutes = require('./routes/profileRoutes');
-const { registerApiRoutes } = require('./routes/registerApiRoutes');
-const { registerWebhookRoutes } = require('./routes/registerWebhookRoutes');
+const kycRoutes = require('./routes/kycRoutes'); 
 
-// Skip advanced payment routes to prevent crashes
-let advancedPaymentRoutes = null;
+// ✅ Added New SaaS Feature Routes Imports
+const searchRoutes = require('./routes/searchRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
+const payoutRoutes = require('./routes/payoutRoutes');
+
+// Imported without curly braces
+const registerApiRoutes = require('./routes/registerApiRoutes');
+const { registerWebhookRoutes } = require('./routes/registerWebhookRoutes');
 
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 const cacheHeaders = require('./middleware/cacheHeaders');
@@ -46,10 +51,10 @@ const { seedAllAdminData } = require('./utils/seedAdminData');
 require('./jobs/wishlistReminderJob');
 const { startBlogScheduler } = require('./jobs/blogSchedulerJob');
 const { startBookingExpiryJob } = require('./jobs/bookingExpiryJob');
+const { startDailyEngagementJob } = require('./jobs/dailyEngagementJob'); // ✅ Added Daily Engagement Job
 
 const app = express();
 let server = null;
-startBookingExpiryJob();
 
 // ======================
 // TRUST PROXY (for Render/Heroku)
@@ -61,15 +66,18 @@ app.set('trust proxy', 1);
 // ======================
 connectDB();
 
-// Seed admin data once DB is connected
+// Seed admin data and start booking expiry job once DB is connected
 mongoose.connection.once('open', () => {
   logger.info('✅ MongoDB connection established, seeding admin data...');
+  
+  startBookingExpiryJob();
+  startDailyEngagementJob(); // ✅ Start engagement cron job
+
   seedAllAdminData().catch(err => {
     logger.error('❌ Error seeding admin data:', err);
   });
 });
 
-// Handle MongoDB connection errors after initial connection
 mongoose.connection.on('error', (err) => {
   logger.error('❌ MongoDB connection error after init:', err);
 });
@@ -81,7 +89,6 @@ mongoose.connection.on('disconnected', () => {
 // ======================
 // CENTRALIZED MIDDLEWARE
 // ======================
-// Security headers
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   contentSecurityPolicy: {
@@ -94,13 +101,9 @@ app.use(helmet({
   },
 }));
 
-// Compression
 app.use(compression());
-
-// CORS
 applyCors(app);
 
-// Body parsing with limits
 app.use(express.json({
   limit: '15mb',
   verify: (req, res, buffer) => {
@@ -111,18 +114,12 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Data sanitization against NoSQL query injection
 app.use(mongoSanitize());
-
-// Data sanitization against XSS
 app.use(xss());
-
-// Prevent parameter pollution
 app.use(hpp({
   whitelist: ['price', 'rating', 'page', 'limit', 'sort']
 }));
 
-// Custom middleware
 app.use(cacheHeaders);
 app.use(responseMiddleware);
 app.use(addCorrelationId);
@@ -133,17 +130,15 @@ app.use(addCorrelationId);
 app.use((req, res, next) => {
   const startTime = Date.now();
   
-  // Log request
   logger.http(`${req.method} ${req.originalUrl}`, {
     ip: req.ip,
     userAgent: req.get('user-agent'),
     correlationId: req.correlationId
   });
   
-  // Log response time
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    if (duration > 1000) { // Log slow requests (>1s)
+    if (duration > 1000) {
       logger.warn(`Slow request: ${req.method} ${req.originalUrl} took ${duration}ms`);
     }
   });
@@ -151,7 +146,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Apply rate limiters
 applyRateLimiters(app);
 
 // ======================
@@ -196,7 +190,11 @@ app.get('/', (req, res) => {
       priceAlerts: true,
       blogs: true,
       stats: true,
-      notifications: true
+      notifications: true,
+      kyc: true,
+      search: true,         // ✅ Enabled search feature flag
+      maintenance: true,    // ✅ Enabled maintenance feature flag
+      payouts: true         // ✅ Enabled payouts feature flag
     },
     paymentGateways: {
       razorpay: true,
@@ -204,36 +202,6 @@ app.get('/', (req, res) => {
     }
   });
 });
-
-// ======================
-// DEBUG ROUTES (only in development)
-// ======================
-if (process.env.NODE_ENV === 'development') {
-  app.get('/api/debug/routes', (req, res) => {
-    const routes = [];
-    app._router.stack.forEach((middleware) => {
-      if (middleware.route) {
-        routes.push({
-          path: middleware.route.path,
-          methods: Object.keys(middleware.route.methods).map(m => m.toUpperCase())
-        });
-      } else if (middleware.name === 'router') {
-        middleware.handle.stack.forEach((handler) => {
-          if (handler.route) {
-            routes.push({
-              path: handler.route.path,
-              methods: Object.keys(handler.route.methods).map(m => m.toUpperCase())
-            });
-          }
-        });
-      }
-    });
-    res.json({ 
-      count: routes.length, 
-      routes: routes.sort((a, b) => a.path.localeCompare(b.path))
-    });
-  });
-}
 
 // ======================
 // API ROUTES REGISTRATION
@@ -255,7 +223,14 @@ registerApiRoutes(app, {
   userRoutes,
   adminRoutes,
   profileRoutes,
+  searchRoutes,       // ✅ Passed search routes here
+  maintenanceRoutes,  // ✅ Passed maintenance routes here
+  payoutRoutes,       // ✅ Passed payout routes here
 });
+
+// Direct mount to guarantee all /api/payments/... and /api/admin/kyc routes are active without prefix issues
+app.use('/api/payments', paymentRoutes);
+app.use('/api/admin/kyc', kycRoutes); 
 
 registerWebhookRoutes(app, express);
 
@@ -275,8 +250,8 @@ const startServer = (port) => {
     logger.info(`💾 MongoDB Status: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
   });
   
-  server.timeout = 120000; // 2 minutes timeout
-  server.keepAliveTimeout = 65000; // 65 seconds keep-alive
+  server.timeout = 120000;
+  server.keepAliveTimeout = 65000;
   
   return server;
 };
